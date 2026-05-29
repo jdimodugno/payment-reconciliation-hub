@@ -65,7 +65,7 @@ describe('HealthController', () => {
       await request(app.getHttpServer())
         .get('/health/ready')
         .expect(HttpStatus.SERVICE_UNAVAILABLE)
-        .expect({ status: 'down', checks: { db: 'down', cache: 'up' }});
+        .expect({ status: 'down', checks: { db: 'down', cache: 'up' } });
     });
   });
 });

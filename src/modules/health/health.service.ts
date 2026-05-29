@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CheckStatus, LivenessReport, ReadinessReport, ReadinessStatus } from '@/modules/health/health.types';
+import type {
+  CheckStatus,
+  LivenessReport,
+  ReadinessReport,
+  ReadinessStatus,
+} from '@/modules/health/health.types';
 import { CACHE_PINGER, DB_PINGER } from './pingers/tokens';
 import { Pinger } from './pingers/pinger.interface';
 
@@ -10,7 +15,7 @@ export class HealthService {
     @Inject(CACHE_PINGER) private readonly cachePinger: Pinger,
   ) {}
 
-  private pingDatabase():  Promise<CheckStatus> {
+  private pingDatabase(): Promise<CheckStatus> {
     return this.dbPinger.ping();
   }
 
@@ -19,9 +24,9 @@ export class HealthService {
   }
 
   async checkLiveness(): Promise<LivenessReport> {
-    return ({
+    return {
       status: 'ok',
-    });
+    };
   }
 
   async checkReadiness(): Promise<ReadinessReport> {
@@ -30,14 +35,15 @@ export class HealthService {
       this.pingCache(),
     ]);
 
-    const status: ReadinessStatus = (db === 'up' && cache === 'up') ? 'ok' : 'down';
+    const status: ReadinessStatus =
+      db === 'up' && cache === 'up' ? 'ok' : 'down';
 
-    return ({
+    return {
       status,
       checks: {
         db,
-        cache
-      }
-    });
+        cache,
+      },
+    };
   }
 }

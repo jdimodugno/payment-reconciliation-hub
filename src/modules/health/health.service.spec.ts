@@ -1,4 +1,3 @@
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { HealthService } from './health.service';
 import { DB_PINGER, CACHE_PINGER } from './pingers/tokens';
