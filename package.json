@@ -4,6 +4,7 @@
   "description": "Multi-provider payment reconciliation system with idempotent webhooks",
   "private": true,
   "license": "MIT",
+  "packageManager": "pnpm@10.13.1",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
