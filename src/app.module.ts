@@ -4,6 +4,7 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { ProvidersModule } from './modules/providers/providers.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { ReconciliationModule } from './modules/reconciliation/reconciliation.mo
     ProvidersModule,
     WebhooksModule,
     ReconciliationModule,
-  ],
+    HealthModule,
+  ]
 })
 export class AppModule {}
