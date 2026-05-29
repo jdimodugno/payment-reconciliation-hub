@@ -14,6 +14,6 @@ import { HealthModule } from './modules/health/health.module';
     WebhooksModule,
     ReconciliationModule,
     HealthModule,
-  ]
+  ],
 })
 export class AppModule {}

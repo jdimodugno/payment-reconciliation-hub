@@ -11,5 +11,5 @@ export type ReadinessReport = {
   checks: {
     db: CheckStatus;
     cache: CheckStatus;
-  }
+  };
 };
