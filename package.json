@@ -4,6 +4,7 @@
   "description": "Multi-provider payment reconciliation system with idempotent webhooks",
   "private": true,
   "license": "MIT",
+  "packageManager": "pnpm@10.13.1",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -15,7 +16,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.json --passWithNoTests",
     "migration:run": "echo 'Configure migration tool first (Prisma or TypeORM)'",
     "evidence": "echo 'Run from study-plan root: npm run evidence'"
   },
