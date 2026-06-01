@@ -10,81 +10,68 @@ import { Money } from './money';
  * - Test the public API, not internals
  * - Edge cases are first-class citizens (see "Edge cases" describe block)
  *
- * These tests INTENTIONALLY FAIL because Money is not yet implemented.
- * That's correct: TDD says write the failing test first.
- *
- * When you implement Money (week 1-2), these tests guide the API design.
+ * NOTE (ADR-005): the original version of this spec targeted a bigint-cents
+ * API (fromCents/fromDecimal/toCents). ADR-005 superseded that hypothesis:
+ * Money is now backed by decimal.js and constructed from minor units, with
+ * per-currency scale resolved internally. The tests below reflect that API.
+ * Arithmetic/comparison helpers (add, equals, ...) are pending and will land
+ * with their own tests when the domain needs them.
  */
-// SKIPPED TEMPORARILY: Money is not yet implemented (pending ADR-T1, money
-// representation). Re-enable by removing `.skip` once Money lands with its
-// implementation. Keeps CI green without masking the TDD-red intent above.
-describe.skip('Money', () => {
-  describe('factory: fromDecimal', () => {
-    it('should create Money from decimal string with USD', () => {
-      // Arrange
-      const amount = '1.50';
-      const currency = 'USD';
+describe('Money', () => {
+  describe('factory: fromMinorUnits', () => {
+    it('should convert USD minor units (2 decimals) to a decimal string', () => {
+      const money = Money.fromMinorUnits(2000, 'usd');
 
-      // Act
-      const money = Money.fromDecimal(amount, currency);
-
-      // Assert
-      expect(money.toCents()).toBe(150n);
-      expect(money.getCurrency()).toBe('USD');
+      expect(money.toDecimal()).toBe('20');
+      expect(money.getCurrency()).toBe('usd');
     });
 
-    it('should create Money from integer string for zero-decimal currency', () => {
-      const money = Money.fromDecimal('100', 'JPY');
+    it('should treat zero-decimal currencies (JPY) without scaling', () => {
+      const money = Money.fromMinorUnits(150, 'jpy');
 
-      expect(money.toCents()).toBe(100n);
+      expect(money.toDecimal()).toBe('150');
     });
 
-    it('should reject invalid decimal format', () => {
-      expect(() => Money.fromDecimal('1.5.0', 'USD')).toThrow();
+    it('should convert 8-decimal currencies (BTC) from satoshis', () => {
+      // 100_000_000 satoshis = 1 BTC
+      const money = Money.fromMinorUnits(100_000_000, 'btc');
+
+      expect(money.toDecimal()).toBe('1');
     });
 
-    it('should reject unknown currency', () => {
-      expect(() => Money.fromDecimal('1.00', 'XYZ')).toThrow();
+    it('should reject a non-integer minor-unit value', () => {
+      expect(() => Money.fromMinorUnits(1.5, 'usd')).toThrow();
     });
-  });
 
-  describe('factory: fromCents', () => {
-    it('should create Money from bigint cents', () => {
-      const money = Money.fromCents(150n, 'USD');
-
-      expect(money.toCents()).toBe(150n);
-      expect(money.toDecimal()).toBe('1.50');
+    it('should reject an unknown currency', () => {
+      expect(() => Money.fromMinorUnits(100, 'xyz')).toThrow();
     });
   });
 
   describe('Edge cases — the cases that matter most in fintech', () => {
     it('should handle zero amounts', () => {
-      const money = Money.fromCents(0n, 'USD');
+      const money = Money.fromMinorUnits(0, 'usd');
 
-      expect(money.toDecimal()).toBe('0.00');
+      expect(money.toDecimal()).toBe('0');
     });
 
-    it('should handle very large amounts (bigint precision)', () => {
-      // 1 trillion USD in cents
-      const huge = 100_000_000_000_000n;
-      const money = Money.fromCents(huge, 'USD');
+    it('should handle very large amounts without precision loss', () => {
+      // 1 trillion USD expressed in cents
+      const oneTrillionInCents = 100_000_000_000_000;
+      const money = Money.fromMinorUnits(oneTrillionInCents, 'usd');
 
-      expect(money.toCents()).toBe(huge);
+      expect(money.toDecimal()).toBe('1000000000000');
     });
 
-    it('should NOT lose precision on 0.1 + 0.2 equivalent', () => {
-      // The cardinal sin of floating point: 0.1 + 0.2 === 0.30000000000000004
-      // This test ensures we are immune.
-      const a = Money.fromDecimal('0.10', 'USD');
-      const b = Money.fromDecimal('0.20', 'USD');
+    it('should NOT lose precision the way IEEE-754 floats do', () => {
+      // The cardinal sin of floating point: 0.1 + 0.2 === 0.30000000000000004.
+      // decimal.js keeps these exact. Once add() lands, assert the sum is '0.3';
+      // for now, prove each part is stored/rendered exactly.
+      const tenCents = Money.fromMinorUnits(10, 'usd');
+      const twentyCents = Money.fromMinorUnits(20, 'usd');
 
-      // When add() is implemented:
-      // const sum = a.add(b);
-      // expect(sum.toDecimal()).toBe('0.30');
-
-      // For now, just verify the parts are stored exactly
-      expect(a.toCents()).toBe(10n);
-      expect(b.toCents()).toBe(20n);
+      expect(tenCents.toDecimal()).toBe('0.1');
+      expect(twentyCents.toDecimal()).toBe('0.2');
     });
   });
 });
