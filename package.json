@@ -17,7 +17,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json --passWithNoTests",
-    "migration:run": "echo 'Configure migration tool first (Prisma or TypeORM)'",
+    "db:smoke": "node --env-file=.env.development -r ts-node/register scripts/db-smoke.ts",
+    "db:generate": "node --env-file=.env.development node_modules/drizzle-kit/bin.cjs generate",
+    "db:migrate": "node --env-file=.env.development node_modules/drizzle-kit/bin.cjs migrate",
     "evidence": "echo 'Run from study-plan root: npm run evidence'"
   },
   "dependencies": {
@@ -30,6 +32,8 @@
     "bullmq": "^5.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.21.0",
     "pino": "^8.16.0",
     "pino-pretty": "^10.2.0",
     "reflect-metadata": "^0.1.13",
@@ -42,9 +46,11 @@
     "@types/express": "^4.17.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.20.0",
     "@types/supertest": "^2.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^8.50.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.0",
@@ -59,13 +65,19 @@
     "typescript": "^5.1.0"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }
