@@ -1,4 +1,3 @@
-import { Money } from '@/shared/money/money';
 import { MockStripeProvider } from './mock-stripe.provider';
 
 const provider = new MockStripeProvider();
