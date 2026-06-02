@@ -1,6 +1,10 @@
 import { Money } from '@/shared/money/money';
 import { PaymentProvider } from '../payment-provider.interface';
-import { ProviderEvent, ProviderEventType } from '../provider-event.type';
+import {
+  RawProviderEvent,
+  ProviderEventType,
+  EnrichedProviderEvent,
+} from '../provider-event.type';
 import { RawStripeEventType, StripeRawPayload } from './stripe-payload.type';
 
 const getType = (rawEventType: RawStripeEventType): ProviderEventType => {
@@ -35,6 +39,7 @@ export const isStripeWebhook = (
   payload.data.object !== null &&
   'id' in payload.data.object &&
   typeof payload.data.object.id === 'string' &&
+  typeof payload.data.object.id === 'string' &&
   'currency' in payload.data.object &&
   payload.data.object.currency !== null &&
   typeof payload.data.object.currency === 'string' &&
@@ -45,21 +50,36 @@ export const isStripeWebhook = (
 export class MockStripeProvider implements PaymentProvider {
   name = 'MOCK_STRIPE';
 
-  parseWebhook(payload: unknown): ProviderEvent {
+  parseWebhook(payload: unknown): RawProviderEvent {
     if (!isStripeWebhook(payload)) {
-      throw new Error('Unable to parse webhook event from provider');
+      throw new Error(
+        `Unable to parse webhook event from provider - ${this.name}}`,
+      );
     }
 
     return {
       externalId: payload.data.object.id,
       externalEventId: payload.id,
-      amount: Money.fromMinorUnits(
-        payload.data.object.amount,
-        payload.data.object.currency,
-      ).toDecimal(),
-      currency: payload.data.object.currency,
       type: getType(payload.type),
       rawEventData: JSON.stringify(payload),
+    };
+  }
+
+  async fetchDetails(
+    rawEvent: RawProviderEvent,
+  ): Promise<EnrichedProviderEvent> {
+    const parsedRawEventData = JSON.parse(rawEvent.rawEventData);
+    if (!isStripeWebhook(parsedRawEventData)) {
+      throw new Error('Unable to parse webhook event from provider');
+    }
+
+    return {
+      ...rawEvent,
+      amount: Money.fromMinorUnits(
+        parsedRawEventData.data.object.amount,
+        parsedRawEventData.data.object.currency,
+      ).toDecimal(),
+      currency: parsedRawEventData.data.object.currency,
     };
   }
 }

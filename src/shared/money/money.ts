@@ -18,6 +18,12 @@ export class Money {
     return new Money(amount, currency);
   }
 
+  static fromDecimal(value: string, currency: string): Money {
+    if (CURRENCY_DECIMALS[currency.toLowerCase()] === undefined)
+      throw new Error(`Unknown currency: ${currency}`);
+    return new Money(new Decimal(value), currency);
+  }
+
   toDecimal(): string {
     return this.amount.toString();
   }

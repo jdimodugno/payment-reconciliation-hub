@@ -3,11 +3,14 @@ export type ProviderEventType =
   | 'payment.failed'
   | 'payment.refunded';
 
-export type ProviderEvent = {
+export type RawProviderEvent = {
   externalEventId: string;
   externalId: string;
   type: ProviderEventType;
+  rawEventData: string;
+};
+
+export type EnrichedProviderEvent = RawProviderEvent & {
   amount: string;
   currency: string;
-  rawEventData: string;
 };
