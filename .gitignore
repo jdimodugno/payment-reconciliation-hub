@@ -35,3 +35,7 @@ pnpm-debug.log*
 # Database
 *.sqlite
 *.sqlite3
+
+
+# graphify — local-only knowledge graph cache (auto-rebuilt by post-commit hook, not versioned)
+graphify-out/
