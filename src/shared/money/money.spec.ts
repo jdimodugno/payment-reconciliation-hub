@@ -47,7 +47,18 @@ describe('Money', () => {
       expect(() => Money.fromMinorUnits(100, 'xyz')).toThrow();
     });
   });
+  describe('factory: fromDecimal', () => {
+    it('should convert USD decimal number to a decimal string', () => {
+      const money = Money.fromDecimal('200.21', 'usd');
 
+      expect(money.toDecimal()).toBe('200.21');
+      expect(money.getCurrency()).toBe('usd');
+    });
+
+    it('should reject an unknown currency', () => {
+      expect(() => Money.fromDecimal('100', 'xyz')).toThrow();
+    });
+  });
   describe('Edge cases — the cases that matter most in fintech', () => {
     it('should handle zero amounts', () => {
       const money = Money.fromMinorUnits(0, 'usd');

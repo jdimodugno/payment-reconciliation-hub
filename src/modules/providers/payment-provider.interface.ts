@@ -1,6 +1,7 @@
-import { ProviderEvent } from './provider-event.type';
+import { EnrichedProviderEvent, RawProviderEvent } from './provider-event.type';
 
 export interface PaymentProvider {
   name: string;
-  parseWebhook: (payload: unknown) => ProviderEvent;
+  parseWebhook: (payload: unknown) => RawProviderEvent;
+  fetchDetails: (rawEvent: RawProviderEvent) => Promise<EnrichedProviderEvent>;
 }
