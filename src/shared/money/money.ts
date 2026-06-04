@@ -1,17 +1,19 @@
 import Decimal from 'decimal.js';
-import { CURRENCY_DECIMALS } from './currency';
-
+import { Currencies, CURRENCY_DECIMALS, isValidCurrency } from './currency';
 export class Money {
   private constructor(
     private readonly amount: Decimal, // ← era cents: bigint
-    private readonly currency: string,
+    private readonly currency: Currencies,
   ) {}
 
   static fromMinorUnits(value: number, currency: string): Money {
-    const decimals = CURRENCY_DECIMALS[currency.toLocaleLowerCase()];
+    if (!isValidCurrency(currency))
+      throw new Error(`Unknown currency: ${currency}`);
+
+    const decimals = CURRENCY_DECIMALS[currency];
     if (!Number.isInteger(value))
       throw new Error('minor units must be an integer');
-    if (decimals === undefined)
+    if (!isValidCurrency(currency))
       throw new Error(`Unknown currency scale: ${currency}`);
 
     const amount = new Decimal(value).div(10 ** decimals);
@@ -19,13 +21,17 @@ export class Money {
   }
 
   static fromDecimal(value: string, currency: string): Money {
-    if (CURRENCY_DECIMALS[currency.toLowerCase()] === undefined)
+    if (!isValidCurrency(currency))
       throw new Error(`Unknown currency: ${currency}`);
     return new Money(new Decimal(value), currency);
   }
 
   toDecimal(): string {
     return this.amount.toString();
+  }
+
+  toDisplayString(): string {
+    return this.amount.toFixed(CURRENCY_DECIMALS[this.currency]);
   }
 
   getCurrency(): string {
