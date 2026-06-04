@@ -16,6 +16,7 @@ export const transactionStatusEnum = pgEnum('transactionStatus', [
   'failed',
   'reversed',
 ]);
+
 export const transactionTypeEnum = pgEnum('transactionType', [
   'payin',
   'payout',
@@ -34,7 +35,7 @@ export const transactionsTable = pgTable(
     status: transactionStatusEnum().notNull(),
     type: transactionTypeEnum().notNull(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
-    metadata: jsonb(),
+    metadata: jsonb().$type<Record<string, unknown>>(),
   },
   (table) => [
     unique('transactions_provider_external_uq').on(
