@@ -1,14 +1,16 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:                          # ← acá, hermano de steps/services
+      DATABASE_URL: postgresql://prh:prh_dev_password@localhost:5432/payment_reconciliation_test
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
 
     services:
       postgres:
@@ -34,17 +36,51 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+    
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
+        with:
+          version: 10.13.1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+
+      - name: Execute DB migration
+        run: pnpm db:migrate
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: E2E tests
+        run: pnpm test:e2e
+
+  lint:
+    runs-on: ubuntu-latest
+      
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.13.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -52,20 +88,3 @@ jobs:
 
       - name: Lint
         run: pnpm lint
-
-      - name: Type check
-        run: pnpm exec tsc --noEmit
-
-      - name: Unit tests
-        run: pnpm test
-        env:
-          DATABASE_URL: postgresql://prh:prh_dev_password@localhost:5432/payment_reconciliation_test
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-
-      - name: E2E tests
-        run: pnpm test:e2e
-        env:
-          DATABASE_URL: postgresql://prh:prh_dev_password@localhost:5432/payment_reconciliation_test
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
