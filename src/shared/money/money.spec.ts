@@ -59,6 +59,24 @@ describe('Money', () => {
       expect(() => Money.fromDecimal('100', 'xyz')).toThrow();
     });
   });
+  describe('generic: toDisplayString', () => {
+    it('should format Money to display string - usd', () => {
+      const displayString = Money.fromDecimal('200', 'usd').toDisplayString();
+      expect(displayString).toBe('200.00');
+    });
+    it('should format Money to display string - jpy', () => {
+      const displayString = Money.fromDecimal('1000', 'jpy').toDisplayString();
+      expect(displayString).toBe('1000');
+    });
+    it('should format Money to display string - btc', () => {
+      const displayString = Money.fromDecimal(
+        '0.0001',
+        'btc',
+      ).toDisplayString();
+      expect(displayString).toBe('0.00010000');
+    });
+  });
+
   describe('Edge cases — the cases that matter most in fintech', () => {
     it('should handle zero amounts', () => {
       const money = Money.fromMinorUnits(0, 'usd');
