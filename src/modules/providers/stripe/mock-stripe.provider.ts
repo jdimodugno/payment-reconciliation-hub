@@ -5,7 +5,12 @@ import {
   ProviderEventType,
   EnrichedProviderEvent,
 } from '../provider-event.type';
-import { RawStripeEventType, StripeRawPayload } from './stripe-payload.type';
+import {
+  RawStripeEventType,
+  StripeEnrichedPayload,
+  StripeRawPayload,
+} from './stripe-payload.type';
+import { BadRequestException } from '@nestjs/common';
 
 const getType = (rawEventType: RawStripeEventType): ProviderEventType => {
   switch (rawEventType) {
@@ -28,9 +33,6 @@ export const isStripeWebhook = (
   'object' in payload &&
   'type' in payload &&
   typeof payload.type === 'string' &&
-  (payload.type === 'payment_intent.succeeded' ||
-    payload.type === 'payment_intent.failed' ||
-    payload.type === 'payment_intent.refunded') &&
   'data' in payload &&
   payload.data !== null &&
   typeof payload.data === 'object' &&
@@ -38,8 +40,16 @@ export const isStripeWebhook = (
   typeof payload.data.object === 'object' &&
   payload.data.object !== null &&
   'id' in payload.data.object &&
-  typeof payload.data.object.id === 'string' &&
-  typeof payload.data.object.id === 'string' &&
+  typeof payload.data.object.id === 'string';
+
+export const isProcessableStripeEvent = (
+  payload: object,
+): payload is StripeEnrichedPayload =>
+  isStripeWebhook(payload) &&
+  'type' in payload &&
+  (payload.type === 'payment_intent.succeeded' ||
+    payload.type === 'payment_intent.failed' ||
+    payload.type === 'payment_intent.refunded') &&
   'currency' in payload.data.object &&
   payload.data.object.currency !== null &&
   typeof payload.data.object.currency === 'string' &&
@@ -52,34 +62,35 @@ export class MockStripeProvider implements PaymentProvider {
 
   parseWebhook(payload: unknown): RawProviderEvent {
     if (!isStripeWebhook(payload)) {
-      throw new Error(
-        `Unable to parse webhook event from provider - ${this.name}}`,
+      throw new BadRequestException(
+        `Unable to parse webhook event from provider - ${this.name}`,
       );
     }
 
     return {
       externalId: payload.data.object.id,
       externalEventId: payload.id,
-      type: getType(payload.type),
-      rawEventData: JSON.stringify(payload),
+      rawEventData: payload,
     };
   }
 
   async fetchDetails(
     rawEvent: RawProviderEvent,
   ): Promise<EnrichedProviderEvent> {
-    const parsedRawEventData = JSON.parse(rawEvent.rawEventData);
-    if (!isStripeWebhook(parsedRawEventData)) {
-      throw new Error('Unable to parse webhook event from provider');
+    if (!isProcessableStripeEvent(rawEvent.rawEventData)) {
+      throw new BadRequestException(
+        `Unable to process webhook event from provider - ${this.name}`,
+      );
     }
 
     return {
       ...rawEvent,
+      type: getType(rawEvent.rawEventData.type),
       amount: Money.fromMinorUnits(
-        parsedRawEventData.data.object.amount,
-        parsedRawEventData.data.object.currency,
+        rawEvent.rawEventData.data.object.amount,
+        rawEvent.rawEventData.data.object.currency,
       ).toDecimal(),
-      currency: parsedRawEventData.data.object.currency,
+      currency: rawEvent.rawEventData.data.object.currency,
     };
   }
 }

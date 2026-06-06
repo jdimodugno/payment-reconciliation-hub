@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { WebhookController } from './webhooks.controller';
+import { WebhookService } from './webhooks.service';
+import { WebhookRepository } from './webhooks.repository';
+import { ProvidersModule } from '../providers/providers.module';
 
 /**
  * WebhooksModule
@@ -20,5 +24,9 @@ import { Module } from '@nestjs/common';
  * - WebhookProcessor (BullMQ consumer)
  * - SignatureVerifierService
  */
-@Module({})
+@Module({
+  imports: [ProvidersModule],
+  controllers: [WebhookController],
+  providers: [WebhookService, WebhookRepository],
+})
 export class WebhooksModule {}

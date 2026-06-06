@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ProvidersService } from './providers.service';
+import { ProvidersRepository } from './providers.repository';
 
 /**
  * ProvidersModule
@@ -16,5 +18,8 @@ import { Module } from '@nestjs/common';
  * Design principle: providers are PLUGINS. Adding a new one should not
  * require changes outside this module.
  */
-@Module({})
+@Module({
+  providers: [ProvidersService, ProvidersRepository],
+  exports: [ProvidersService],
+})
 export class ProvidersModule {}
