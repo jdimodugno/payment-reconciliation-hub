@@ -20,6 +20,16 @@ export type RawStripeEventType =
 export type StripeRawPayload = {
   id: string;
   object: string;
+  data: {
+    object: {
+      id: string;
+    };
+  };
+};
+
+export type StripeEnrichedPayload = {
+  id: string;
+  object: string;
   type: RawStripeEventType;
   data: {
     object: {

@@ -10,7 +10,15 @@
 export type RawMercadoPagoEventType = 'payment';
 export type RawMercadoPagoEventAction = 'payment.created' | 'payment.updated';
 
-export type MercadoPagoPayload = {
+export type MercadoPagoRawPayload = {
+  id: number;
+  type: RawMercadoPagoEventType;
+  data: {
+    id: string;
+  };
+};
+
+export type MercadoPagoEnrichedPayload = {
   id: number;
   type: RawMercadoPagoEventType;
   action: RawMercadoPagoEventAction;

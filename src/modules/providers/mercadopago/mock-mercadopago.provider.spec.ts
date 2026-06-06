@@ -17,21 +17,21 @@ describe('MockMercadoPagoProvider.parseWebhook', () => {
 
     expect(event.externalId).toEqual('999999999');
     expect(event.externalEventId).toEqual('12345');
-    expect(event.type).toEqual('payment.succeeded');
   });
 
   it('throws on a malformed payload', () => {
     expect(() => provider.parseWebhook({ foo: 'bar' })).toThrow();
   });
 
-  it('throws on an unknown event type', () => {
-    expect(() =>
-      provider.parseWebhook({
-        ...validEventPayload,
-        type: 'charge.disputed',
-        action: 'charge.disputed',
-      }),
-    ).toThrow();
+  it('tolerates an unknown event type at parse, rejects it at enrichment', async () => {
+    const unknownTypeEvent = {
+      ...validEventPayload,
+      action: 'charge.disputed',
+    };
+    const raw = provider.parseWebhook(unknownTypeEvent);
+    expect(raw.externalId).toEqual('999999999');
+    expect(raw.externalEventId).toEqual('12345');
+    await expect(provider.fetchDetails(raw)).rejects.toThrow();
   });
 });
 

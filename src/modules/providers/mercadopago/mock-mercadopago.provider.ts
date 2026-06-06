@@ -6,9 +6,11 @@ import {
   ProviderEventType,
 } from '../provider-event.type';
 import {
-  MercadoPagoPayload,
+  MercadoPagoEnrichedPayload,
+  MercadoPagoRawPayload,
   RawMercadoPagoEventAction,
 } from './mercadopago-payload.type';
+import { BadRequestException } from '@nestjs/common';
 
 const getType = (
   rawEventType: RawMercadoPagoEventAction,
@@ -24,7 +26,7 @@ const getType = (
 
 const isMercadoPagoWebhook = (
   payload: unknown,
-): payload is MercadoPagoPayload =>
+): payload is MercadoPagoRawPayload =>
   payload !== null &&
   typeof payload === 'object' &&
   'id' in payload &&
@@ -32,13 +34,19 @@ const isMercadoPagoWebhook = (
   'type' in payload &&
   payload.type === 'payment' &&
   'action' in payload &&
-  (payload.action === 'payment.created' ||
-    payload.action === 'payment.updated') &&
   'data' in payload &&
   typeof payload.data === 'object' &&
   payload.data !== null &&
   'id' in payload.data &&
   typeof payload.data.id === 'string';
+
+const isProcessableMercadoPagoEvent = (
+  payload: object,
+): payload is MercadoPagoEnrichedPayload =>
+  isMercadoPagoWebhook(payload) &&
+  'action' in payload &&
+  (payload.action === 'payment.created' ||
+    payload.action === 'payment.updated');
 
 type FakeMPObject = {
   id: string;
@@ -65,7 +73,7 @@ export class MockMercadoPagoProvider implements PaymentProvider {
 
   parseWebhook(payload: unknown): RawProviderEvent {
     if (!isMercadoPagoWebhook(payload)) {
-      throw new Error(
+      throw new BadRequestException(
         `Unable to parse webhook event from provider - ${this.name}`,
       );
     }
@@ -73,26 +81,25 @@ export class MockMercadoPagoProvider implements PaymentProvider {
     return {
       externalId: payload.data.id,
       externalEventId: payload.id.toString(),
-      type: getType(payload.action),
-      rawEventData: JSON.stringify(payload),
+      rawEventData: payload,
     };
   }
   async fetchDetails(
     rawEvent: RawProviderEvent,
   ): Promise<EnrichedProviderEvent> {
-    const parsedRawEventData = JSON.parse(rawEvent.rawEventData);
-    if (!isMercadoPagoWebhook(parsedRawEventData)) {
-      throw new Error(
-        `Unable to parse webhook event from provider - ${this.name}`,
+    if (!isProcessableMercadoPagoEvent(rawEvent.rawEventData)) {
+      throw new BadRequestException(
+        `Unable to process webhook event from provider - ${this.name}`,
       );
     }
     // TODO: real GET /v1/payments/{id}
     const txData = await fakeFetchMercadoPagoTxDetail(
-      parsedRawEventData.data.id,
+      rawEvent.rawEventData.data.id,
     );
 
     return {
       ...rawEvent,
+      type: getType(rawEvent.rawEventData.action),
       amount: Money.fromDecimal(
         txData.amount.toString(),
         txData.currency,

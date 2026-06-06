@@ -6,11 +6,11 @@ export type ProviderEventType =
 export type RawProviderEvent = {
   externalEventId: string;
   externalId: string;
-  type: ProviderEventType;
-  rawEventData: string;
+  rawEventData: Record<string, unknown>;
 };
 
 export type EnrichedProviderEvent = RawProviderEvent & {
   amount: string;
   currency: string;
+  type: ProviderEventType;
 };

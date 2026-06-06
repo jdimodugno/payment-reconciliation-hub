@@ -25,17 +25,21 @@ Decisiones técnicas significativas del proyecto, en orden cronológico.
 | 001 | [Single repository](./001-single-repository.md) | Accepted | 2026-05-27 |
 | 002 | [NestJS framework](./002-nestjs-framework.md) | Accepted | 2026-05-27 |
 | 003 | [PostgreSQL over MongoDB](./003-postgres-over-mongo.md) | Accepted | 2026-05-27 |
+| 004 | [Drizzle ORM](./004-drizzle-orm.md) | Accepted | 2026-05-30 |
+| 005 | [Money representation](./005-money-representation.md) | Accepted | 2026-06-01 |
+| 006 | [Zod input validation](./006-zod-input-validation.md) | Accepted | 2026-06-03 |
+| 007 | [Webhook idempotency](./007-webhook-idempotency.md) | Accepted | 2026-06-06 |
 
 ## ADRs anticipados (a escribir durante el roadmap)
 
-Estos son los que vas a escribir cuando lleguen los puntos correspondientes:
+Estos son los que vas a escribir cuando lleguen los puntos correspondientes
+(numeración tentativa; la real se asigna al escribirlos):
 
-- **004** — Money representation strategy (semana 1-2, antes de implementar Money)
-- **005** — ORM choice: Prisma vs TypeORM (semana 1-2, antes de la primera migration)
-- **006** — Webhook idempotency strategy (semana 2-3, antes de implementar receivers)
-- **007** — Retry policy and dead letter queue (semana 3-4)
-- **008** — Reconciliation matching algorithm (semana 5)
-- **009** — Eventual consistency tradeoffs in reporting (semana 5-6)
+- Idempotencia de **procesamiento** (doble Transaction): `UNIQUE` en transactions +
+  `processedAt` (Día 8, derivado del 007)
+- Retry policy and dead letter queue (semana 3-4)
+- Reconciliation matching algorithm (semana 5)
+- Eventual consistency tradeoffs in reporting (semana 5-6)
 
 No los escribas anticipadamente. Cada uno se escribe cuando llegues al
 contexto real donde la decisión se vuelve concreta.
