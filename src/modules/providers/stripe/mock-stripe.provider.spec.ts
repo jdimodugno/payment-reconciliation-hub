@@ -22,21 +22,18 @@ describe('MockStripeProvider.parseWebhook', () => {
 
     expect(event.externalId).toEqual('pi_456');
     expect(event.externalEventId).toEqual('evt_123');
-    expect(event.type).toEqual('payment.succeeded');
   });
 
   it('throws on a malformed payload', () => {
     expect(() => provider.parseWebhook({ foo: 'bar' })).toThrow();
   });
 
-  it('throws on an unknown event type', () => {
-    expect(() =>
-      provider.parseWebhook({
-        ...validPayload,
-        data: { ...validPayload.data },
-        type: 'charge.disputed',
-      }),
-    ).toThrow();
+  it('tolerates an unknown event type at parse, rejects it at enrichment', async () => {
+    const unknownTypeEvent = { ...validPayload, type: 'charge.disputed' };
+    const raw = provider.parseWebhook(unknownTypeEvent);
+    expect(raw.externalEventId).toEqual('evt_123');
+    expect(raw.externalId).toEqual('pi_456');
+    await expect(provider.fetchDetails(raw)).rejects.toThrow();
   });
 });
 
