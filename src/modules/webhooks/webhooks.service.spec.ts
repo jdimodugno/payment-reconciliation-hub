@@ -117,6 +117,9 @@ describe('WebhookService.processSingleEvent', () => {
         rawEventData: {},
       };
       providerInstance.fetchDetails.mockResolvedValue(enriched);
+      webhookRepository.markEventAsProcessed.mockResolvedValue({
+        status: 'processed',
+      });
       await service.processSingleEvent(event);
       expect(webhookRepository.markEventAsProcessed).toHaveBeenCalledWith(
         enriched,
