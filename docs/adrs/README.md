@@ -29,14 +29,14 @@ Decisiones técnicas significativas del proyecto, en orden cronológico.
 | 005 | [Money representation](./005-money-representation.md) | Accepted | 2026-06-01 |
 | 006 | [Zod input validation](./006-zod-input-validation.md) | Accepted | 2026-06-03 |
 | 007 | [Webhook idempotency](./007-webhook-idempotency.md) | Accepted | 2026-06-06 |
+| 008 | [Webhook processing idempotency](./008-webhook-processing-idempotency.md) | Accepted | 2026-06-08 |
+| 009 | [Provider event to domain transaction mapping](./009-provider-event-to-domain-transaction-mapping.md) | Accepted | 2026-06-09 |
 
 ## ADRs anticipados (a escribir durante el roadmap)
 
 Estos son los que vas a escribir cuando lleguen los puntos correspondientes
 (numeración tentativa; la real se asigna al escribirlos):
 
-- Idempotencia de **procesamiento** (doble Transaction): `UNIQUE` en transactions +
-  `processedAt` (Día 8, derivado del 007)
 - Retry policy and dead letter queue (semana 3-4)
 - Reconciliation matching algorithm (semana 5)
 - Eventual consistency tradeoffs in reporting (semana 5-6)

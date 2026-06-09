@@ -6,6 +6,7 @@ import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
 import { providersTable } from '@/modules/providers/provider.schema';
 import { webhooksTable } from '@/modules/webhooks/webhook.schema';
 import { eq } from 'drizzle-orm';
+import { transactionsTable } from '@/modules/transactions/transaction.schema';
 
 describe('Webhooks (e2e)', () => {
   let app: INestApplication;
@@ -24,6 +25,7 @@ describe('Webhooks (e2e)', () => {
 
   beforeEach(async () => {
     await db.delete(webhooksTable);
+    await db.delete(transactionsTable);
     await db.delete(providersTable);
     const [p] = await db
       .insert(providersTable)
