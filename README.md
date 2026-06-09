@@ -106,6 +106,40 @@ npm run test:cov      # with coverage
             └─────────────┘
 ```
 
+### Webhook → Transaction flow (idempotent — what's actually built)
+
+> The ASCII above is the target architecture. This is the flow implemented today:
+> two idempotency arbiters (reception + processing) and a dead-letter path.
+
+```mermaid
+flowchart TD
+  P[Provider webhook] -->|POST /webhooks/:providerId| C[WebhookController · thin]
+  C --> S1[WebhookService]
+  S1 --> R1[WebhookRepository]
+  R1 -->|"UNIQUE(providerId, externalEventId)<br/>reception arbiter · ADR-007"| WE[(webhook_events)]
+  S1 -. "201 new / 200 duplicate" .-> P
+
+  WE --> PP
+
+  subgraph PP[processPendingEvents · policy + guards]
+    direction TB
+    G1{"retries ≥ MAX?"} -->|yes| DL
+    G1 -->|no| EN["provider.fetchDetails<br/>anti-corruption · ADR-009 layer 1"]
+    EN --> G2{"currency soportada?"}
+    G2 -->|no| DL
+    G2 -->|yes| MAP["event → transaction mapper<br/>ADR-009 layer 2"]
+    MAP -->|null| DL
+    MAP --> CLAIM["claim atómico + upsert<br/>(misma txn) · ADR-008"]
+  end
+
+  CLAIM -->|claim ganado| TX[(transactions)]
+  CLAIM -->|"claim perdido (0 filas)"| AP["already_processed · no-op idempotente"]
+  CLAIM -->|error real| RT["retries++ · rethrow (T5)"]
+  DL["pending_manual_review<br/>dead-letter"]
+```
+
+**Por qué dos árbitros:** recepción deduplica el *evento* (UNIQUE); procesamiento garantiza cuántas veces *actúo* sobre él (claim). Un evento único igual puede doble-procesarse sin el claim → ese es el rol de ADR-008.
+
 ## Documentation
 
 - [Architecture Decision Records](./docs/adrs/) — why the system is built this way
