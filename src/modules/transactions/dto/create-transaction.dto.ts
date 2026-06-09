@@ -3,6 +3,7 @@ import { transactionTypeEnum } from '../transaction.schema';
 import { Money } from '@/shared/money/money';
 import { Currencies, CURRENCY_DECIMALS } from '@/shared/money/currency';
 import Decimal from 'decimal.js';
+import { TransactionStatus } from '../transaction.types';
 
 const DECIMAL_RE = /^\d+(\.\d+)?$/;
 
@@ -44,7 +45,12 @@ export const CreateTransactionSchema = z
 
 export type CreateTransactionDto = z.infer<typeof CreateTransactionSchema>;
 
-export type CreateTransactionData = Omit<CreateTransactionDto, 'amount'> & {
+export type CreateTransactionData = Omit<
+  CreateTransactionDto,
+  'status' | 'amount'
+> & {
   amount: string;
-  status: 'pending';
+  status: TransactionStatus;
 };
+
+export type UpsertTransactionData = CreateTransactionData;

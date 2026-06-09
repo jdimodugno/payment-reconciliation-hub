@@ -13,9 +13,8 @@ import { transactionsTable } from '../transactions/transaction.schema';
 
 export const webhookEventStatusEnum = pgEnum('webhookEventStatus', [
   'received',
-  'processing',
   'processed',
-  'failed',
+  'pending_manual_review',
 ]);
 
 export const webhooksTable = pgTable(
@@ -32,6 +31,7 @@ export const webhooksTable = pgTable(
     receivedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     processedAt: timestamp({ withTimezone: true }),
     transactionId: uuid().references(() => transactionsTable.id),
+    reason: varchar({ length: 30 }),
   },
   (table) => [
     unique('webhook_events_provider_event_uk').on(

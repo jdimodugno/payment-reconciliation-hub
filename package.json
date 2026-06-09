@@ -16,7 +16,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json --passWithNoTests",
+    "test:e2e": "jest --config ./test/jest-e2e.json --passWithNoTests --runInBand",
     "db:smoke": "node --env-file=.env.development -r ts-node/register scripts/db-smoke.ts",
     "db:generate": "node --env-file=.env.development node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file=.env.development node_modules/drizzle-kit/bin.cjs migrate",

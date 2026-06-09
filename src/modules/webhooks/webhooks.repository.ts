@@ -1,10 +1,18 @@
 import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
 import { Inject, Injectable } from '@nestjs/common';
-import { WebhookEvent } from './webhook.types';
+import { ProcessWebhookEventResult, WebhookEvent } from './webhook.types';
 import { webhooksTable } from './webhook.schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DatabaseError } from 'pg';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
+import { EnrichedProviderEvent } from '../providers/provider-event.type';
+import { transactionsTable } from '../transactions/transaction.schema';
+import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
+import { isValidCurrency } from '@/shared/money/currency';
+import {
+  AlreadyProcessedError,
+  UnableToPersistTransactionError,
+} from './webhook.exception';
 
 @Injectable()
 export class WebhookRepository {
@@ -60,5 +68,140 @@ export class WebhookRepository {
       }
       throw error;
     }
+  }
+
+  async getPendingWebhookEvents(): Promise<{
+    status: 'none' | 'found';
+    elements: WebhookEvent[];
+  }> {
+    const pendingEvents = await this.db
+      .select()
+      .from(webhooksTable)
+      .where(
+        and(
+          eq(webhooksTable.status, 'received'),
+          eq(isNull(webhooksTable.processedAt), true),
+          eq(isNull(webhooksTable.transactionId), true),
+        ),
+      );
+
+    return {
+      status: pendingEvents.length ? 'found' : 'none',
+      elements: pendingEvents.map((evt) => ({
+        ...evt,
+        receivedAt: evt.receivedAt.toISOString(),
+        processedAt: null,
+      })),
+    };
+  }
+
+  async markEventAsProcessed(
+    eventData: EnrichedProviderEvent,
+    transactionData: UpsertTransactionData,
+  ): Promise<ProcessWebhookEventResult> {
+    try {
+      const dbTransactionResult = await this.db.transaction(async (tx) => {
+        const txRow = await tx
+          .insert(transactionsTable)
+          .values(transactionData)
+          .onConflictDoUpdate({
+            target: [
+              transactionsTable.providerId,
+              transactionsTable.externalId,
+            ],
+            set: {
+              ...transactionData,
+            },
+          })
+          .returning();
+
+        if (txRow.length === 0) {
+          throw new UnableToPersistTransactionError(
+            `External event: ${eventData.externalEventId} cannot persist transaction`,
+          );
+        }
+
+        const claim = await tx
+          .update(webhooksTable)
+          .set({
+            status: 'processed',
+            processedAt: sql`now()`,
+            transactionId: txRow[0].id,
+          })
+          .where(
+            and(
+              eq(webhooksTable.status, 'received'),
+              eq(isNull(webhooksTable.processedAt), true),
+              eq(isNull(webhooksTable.transactionId), true),
+            ),
+          )
+          .returning();
+
+        if (claim.length === 0) {
+          throw new AlreadyProcessedError(
+            `External event: ${eventData.externalEventId} is already processed`,
+          );
+        }
+
+        return {
+          result: {
+            event: claim[0],
+            tx: txRow[0],
+          },
+        };
+      });
+
+      const { event, tx } = dbTransactionResult.result;
+
+      if (!isValidCurrency(tx.currency)) {
+        throw new Error(
+          `Cannot map currency ${tx.currency} to a valid currency.`,
+        );
+      }
+
+      if (event.processedAt === null) {
+        throw new Error(
+          'Missing required field "processedAt" for a webhook event with "processed" status',
+        );
+      }
+
+      return { status: 'processed' };
+    } catch (error) {
+      if (error instanceof AlreadyProcessedError) {
+        return {
+          status: 'already_processed',
+        };
+      }
+
+      console.error(
+        `Failed attempt to process external event: ${eventData.externalEventId}`,
+      );
+      await this.db
+        .update(webhooksTable)
+        .set({
+          retries: sql`${webhooksTable.retries} + 1`,
+        })
+        .where(
+          and(
+            eq(webhooksTable.externalEventId, eventData.externalEventId),
+            eq(webhooksTable.providerId, transactionData.providerId),
+          ),
+        );
+
+      throw error;
+    }
+  }
+
+  async setEventForManualReview(
+    eventId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.db
+      .update(webhooksTable)
+      .set({
+        status: 'pending_manual_review',
+        reason,
+      })
+      .where(eq(webhooksTable.id, eventId));
   }
 }

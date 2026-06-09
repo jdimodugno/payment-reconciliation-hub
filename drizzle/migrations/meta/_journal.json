@@ -15,6 +15,13 @@
       "when": 1780340958159,
       "tag": "0001_add_webhook_events",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781014614110,
+      "tag": "0002_iterate_webhook_events",
+      "breakpoints": true
     }
   ]
 }

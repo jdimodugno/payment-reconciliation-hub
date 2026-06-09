@@ -5,7 +5,7 @@ import { MockStripeProvider } from './stripe/mock-stripe.provider';
 
 type PaymentProviderConstructor = new () => PaymentProvider;
 
-type ProviderType = 'mercadopago' | 'stripe';
+export type ProviderType = 'mercadopago' | 'stripe';
 
 const providers: Record<ProviderType, PaymentProviderConstructor> = {
   mercadopago: MockMercadoPagoProvider,
@@ -19,14 +19,32 @@ export function createProvider(name: ProviderType): PaymentProvider {
 export const isValidProvider = (
   providerName: string,
 ): providerName is ProviderType => {
-  return providerName in providers;
+  return Object.hasOwn(providers, providerName);
 };
 
 export class PaymentProviderFactory {
+  _instances: Record<ProviderType, PaymentProvider | null>;
+
+  constructor() {
+    this._instances = {
+      mercadopago: null,
+      stripe: null,
+    };
+  }
+
   static fromName(providerName: string): PaymentProvider {
     if (!isValidProvider(providerName)) {
       throw new BadRequestException(`Invalid provider - ${providerName}`);
     }
     return createProvider(providerName);
+  }
+
+  getProviderInstance(providerName: string): PaymentProvider {
+    if (!isValidProvider(providerName)) {
+      throw new BadRequestException(`Invalid provider - ${providerName}`);
+    }
+    if (!this._instances[providerName])
+      this._instances[providerName] = createProvider(providerName);
+    return this._instances[providerName];
   }
 }
