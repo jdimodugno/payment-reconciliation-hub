@@ -1,8 +1,12 @@
 import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
 import { Inject, Injectable } from '@nestjs/common';
-import { ProcessWebhookEventResult, WebhookEvent } from './webhook.types';
+import {
+  ProcessWebhookEventResult,
+  UnprocessedEventRow,
+  WebhookEvent,
+} from './webhook.types';
 import { webhooksTable } from './webhook.schema';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import { DatabaseError } from 'pg';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { EnrichedProviderEvent } from '../providers/provider-event.type';
@@ -70,6 +74,27 @@ export class WebhookRepository {
     }
   }
 
+  async findUnprocessedEvents(): Promise<UnprocessedEventRow[]> {
+    const events = await this.db
+      .select({
+        id: webhooksTable.id,
+        receivedAt: webhooksTable.receivedAt,
+      })
+      .from(webhooksTable)
+      .where(
+        and(
+          or(
+            eq(webhooksTable.status, 'received'),
+            eq(webhooksTable.status, 'pending_manual_review'),
+          ),
+          isNull(webhooksTable.processedAt),
+        ),
+      )
+      .orderBy(asc(webhooksTable.receivedAt));
+
+    return events;
+  }
+
   async getPendingWebhookEvents(): Promise<{
     status: 'none' | 'found';
     elements: WebhookEvent[];
@@ -80,8 +105,8 @@ export class WebhookRepository {
       .where(
         and(
           eq(webhooksTable.status, 'received'),
-          eq(isNull(webhooksTable.processedAt), true),
-          eq(isNull(webhooksTable.transactionId), true),
+          isNull(webhooksTable.processedAt),
+          isNull(webhooksTable.transactionId),
         ),
       );
 
@@ -131,8 +156,8 @@ export class WebhookRepository {
           .where(
             and(
               eq(webhooksTable.status, 'received'),
-              eq(isNull(webhooksTable.processedAt), true),
-              eq(isNull(webhooksTable.transactionId), true),
+              isNull(webhooksTable.processedAt),
+              isNull(webhooksTable.transactionId),
             ),
           )
           .returning();

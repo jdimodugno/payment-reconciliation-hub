@@ -3,16 +3,16 @@ import { WebhookService } from './webhooks.service';
 import { WebhookRepository } from './webhooks.repository';
 import { ProvidersService } from '../providers/providers.service';
 import { PendingManualReviewReason, WebhookEvent } from './webhook.types';
+import z from 'zod';
 
-// Mocks de las dependencias del service (política/guards aislada de DB y providers reales).
 const webhookRepository = {
   setEventForManualReview: jest.fn(),
   markEventAsProcessed: jest.fn(),
   getPendingWebhookEvents: jest.fn(),
+  findUnprocessedEvents: jest.fn(),
   create: jest.fn(),
 };
 
-// providerInstance simula parseWebhook/fetchDetails; ajustá el retorno por test.
 const providerInstance = {
   name: 'MOCK_STRIPE',
   parseWebhook: jest.fn(),
@@ -24,7 +24,6 @@ const providersService = {
   getPaymentProviderInstance: jest.fn().mockReturnValue(providerInstance),
 };
 
-// Helper para construir un WebhookEvent pendiente; sobreescribí lo que cada test necesite.
 const buildEvent = (overrides: Partial<WebhookEvent> = {}): WebhookEvent =>
   ({
     id: 'evt-uuid',
@@ -126,5 +125,60 @@ describe('WebhookService.processSingleEvent', () => {
         expect.objectContaining({ type: 'payin', status: 'settled' }),
       );
     });
+  });
+});
+
+describe('WebhookService.findUnprocessedEvents', () => {
+  let service: WebhookService;
+
+  const NOW = new Date('2026-06-11T00:00:00.000Z').getTime();
+  const DAY_MS = 1000 * 60 * 60 * 24;
+
+  const rowReceivedDaysAgo = (id: string, daysAgo: number) => ({
+    id,
+    receivedAt: new Date(NOW - daysAgo * DAY_MS),
+  });
+
+  beforeAll(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(NOW);
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        WebhookService,
+        { provide: WebhookRepository, useValue: webhookRepository },
+        { provide: ProvidersService, useValue: providersService },
+      ],
+    }).compile();
+    service = moduleRef.get(WebhookService);
+  });
+
+  it('deriva ageInDays correcto y receivedAt como ISO string', async () => {
+    webhookRepository.findUnprocessedEvents.mockResolvedValue([
+      rowReceivedDaysAgo('evt-10d', 10),
+      rowReceivedDaysAgo('evt-3d', 3),
+      rowReceivedDaysAgo('evt-0d', 0),
+    ]);
+
+    const result = await service.findUnprocessedEvents();
+
+    expect(result[0].ageInDays).toBe(10);
+    expect(z.iso.datetime().safeParse(result[0].receivedAt).success).toBe(true);
+    expect(result[1].ageInDays).toBe(3);
+    expect(z.iso.datetime().safeParse(result[1].receivedAt).success).toBe(true);
+    expect(result[2].ageInDays).toBe(0);
+    expect(z.iso.datetime().safeParse(result[2].receivedAt).success).toBe(true);
+  });
+
+  it('repo vacío → []', async () => {
+    webhookRepository.findUnprocessedEvents.mockResolvedValue([]);
+    const result = await service.findUnprocessedEvents();
+    expect(result.length).toBe(0);
   });
 });

@@ -1,4 +1,13 @@
-import { Controller, Post, Body, Param, Res, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  Res,
+  HttpStatus,
+  HttpCode,
+  Get,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { WebhookService } from './webhooks.service';
 import { Response } from 'express';
@@ -23,5 +32,11 @@ export class WebhookController {
       webhookEvent.status === 'created' ? HttpStatus.CREATED : HttpStatus.OK;
 
     return webhookEvent;
+  }
+
+  @Get('/reconciliation-status')
+  @HttpCode(HttpStatus.OK)
+  async getReconciliationStatus() {
+    return this.webhookService.findUnprocessedEvents();
   }
 }

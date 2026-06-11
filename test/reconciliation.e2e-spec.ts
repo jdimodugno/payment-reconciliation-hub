@@ -1,0 +1,165 @@
+import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import { AppModule } from '@/app.module';
+import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
+import { providersTable } from '@/modules/providers/provider.schema';
+import { webhooksTable } from '@/modules/webhooks/webhook.schema';
+import { transactionsTable } from '@/modules/transactions/transaction.schema';
+import { UnprocessedEvent } from '@/modules/webhooks/webhook.types';
+
+// GET /reconciliation-status — lente READ-ONLY sobre eventos no procesados.
+// Hoy NO afirma orfandad (no hay state-machine ni processing-window todavía):
+// solo lista processed_at IS NULL ordenados por received_at (aging visible).
+describe('Reconciliation status (e2e)', () => {
+  let app: INestApplication;
+  let db: DrizzleDB;
+  let providerId: string;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    db = moduleRef.get<DrizzleDB>(DRIZZLE);
+  });
+
+  beforeEach(async () => {
+    await db.delete(webhooksTable);
+    await db.delete(transactionsTable);
+    await db.delete(providersTable);
+    const [p] = await db
+      .insert(providersTable)
+      .values({ name: 'stripe', type: 'payment', enabled: true })
+      .returning();
+    providerId = p.id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  let seq = 0;
+  const seedWebhook = async (
+    overrides: {
+      receivedAt?: Date;
+      status?: 'received' | 'processed' | 'pending_manual_review';
+      processedAt?: Date | null;
+      externalEventId?: string;
+    } = {},
+  ) => {
+    seq += 1;
+    const [row] = await db
+      .insert(webhooksTable)
+      .values({
+        providerId,
+        externalEventId: overrides.externalEventId ?? `evt_recon_${seq}`,
+        status: overrides.status ?? 'received',
+        processedAt: overrides.processedAt ?? null,
+        // si no pasás receivedAt, Postgres usa defaultNow() (no determinista para orden)
+        ...(overrides.receivedAt ? { receivedAt: overrides.receivedAt } : {}),
+        payload: {
+          id: `evt_recon_${seq}`,
+          object: 'event',
+          type: 'payment_intent.succeeded',
+          data: { object: { id: 'pi_1', amount: 2000, currency: 'usd' } },
+        },
+      })
+      .returning();
+    return row;
+  };
+
+  // Fechas testigo para aging determinista (más viejo → más nuevo).
+  const oldest = new Date('2026-06-01T00:00:00.000Z');
+  const middle = new Date('2026-06-05T00:00:00.000Z');
+  const newest = new Date('2026-06-09T00:00:00.000Z');
+
+  describe('orden por aging (received_at asc)', () => {
+    it('lista los unprocessed del más viejo al más nuevo', async () => {
+      const middleEvt = await seedWebhook({
+        receivedAt: middle,
+        externalEventId: 'evt_middle',
+      });
+      const newestEvt = await seedWebhook({
+        receivedAt: newest,
+        externalEventId: 'evt_newest',
+      });
+      const oldestEvt = await seedWebhook({
+        receivedAt: oldest,
+        externalEventId: 'evt_oldest',
+      });
+
+      const res = await request(app.getHttpServer()).get(
+        '/webhooks/reconciliation-status',
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.length).toBe(3);
+      expect(
+        (res.body as UnprocessedEvent[]).findIndex(
+          (evt) => evt.id === oldestEvt.id,
+        ),
+      ).toBe(0);
+      expect(
+        (res.body as UnprocessedEvent[]).findIndex(
+          (evt) => evt.id === middleEvt.id,
+        ),
+      ).toBe(1);
+      expect(
+        (res.body as UnprocessedEvent[]).findIndex(
+          (evt) => evt.id === newestEvt.id,
+        ),
+      ).toBe(2);
+    });
+  });
+
+  describe('predicado: solo processed_at IS NULL', () => {
+    it('excluye los procesados (caso NEGATIVO que prueba el WHERE)', async () => {
+      const evt1 = await seedWebhook({
+        receivedAt: oldest,
+        externalEventId: 'evt_pending_1',
+      });
+      const evt2 = await seedWebhook({
+        receivedAt: newest,
+        externalEventId: 'evt_pending_2',
+      });
+      await seedWebhook({
+        receivedAt: new Date('2026-05-01T00:00:00.000Z'),
+        status: 'processed',
+        processedAt: middle,
+        externalEventId: 'evt_processed',
+      });
+
+      const res = await request(app.getHttpServer()).get(
+        '/webhooks/reconciliation-status',
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.length).toBe(2);
+      expect(
+        (res.body as UnprocessedEvent[]).findIndex((evt) => evt.id === evt1.id),
+      ).toBe(0);
+      expect(
+        (res.body as UnprocessedEvent[]).findIndex((evt) => evt.id === evt2.id),
+      ).toBe(1);
+    });
+  });
+
+  describe('caso borde: nada pendiente', () => {
+    it('todo procesado → lista vacía, no error', async () => {
+      await seedWebhook({
+        status: 'processed',
+        processedAt: newest,
+        externalEventId: 'evt_done',
+      });
+
+      const res = await request(app.getHttpServer()).get(
+        '/webhooks/reconciliation-status',
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.length).toBe(0);
+    });
+  });
+});
