@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionsRepository } from './transactions.repository';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { Transaction } from './transaction.types';
+import { TransactionNotFoundError } from './transactions.exception';
 
 @Injectable()
 export class TransactionsService {
@@ -13,5 +14,15 @@ export class TransactionsService {
       amount: data.amount.toDecimal(),
       status: 'pending',
     });
+  }
+
+  async findById(id: string): Promise<Transaction> {
+    const transaction = await this.repository.findById(id);
+
+    if (!transaction) {
+      throw new TransactionNotFoundError(id);
+    }
+
+    return transaction;
   }
 }
