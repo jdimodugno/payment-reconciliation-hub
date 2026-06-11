@@ -30,3 +30,13 @@ export type WebhookEvent = {
   transactionId: string | null;
   reason: string | null;
 };
+
+export type UnprocessedEventRow = {
+  id: string;
+  receivedAt: Date;
+};
+
+export type UnprocessedEvent = Omit<UnprocessedEventRow, 'receivedAt'> & {
+  receivedAt: string;
+  ageInDays: number;
+};

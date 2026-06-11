@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { WebhookRepository } from './webhooks.repository';
-import { PendingManualReviewReason, WebhookEvent } from './webhook.types';
+import {
+  PendingManualReviewReason,
+  UnprocessedEvent,
+  WebhookEvent,
+} from './webhook.types';
 import { ProvidersService } from '../providers/providers.service';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
@@ -119,5 +123,23 @@ export class WebhookService {
     );
 
     console.log(`${singleEvent.id} ended with status: ${processResult.status}`);
+  }
+
+  async findUnprocessedEvents(): Promise<UnprocessedEvent[]> {
+    const events = await this.webhookRepository.findUnprocessedEvents();
+
+    const now = Date.now();
+
+    return events.map((evt) => {
+      const ageInDays = Math.floor(
+        (now - evt.receivedAt.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      return {
+        ...evt,
+        receivedAt: evt.receivedAt.toISOString(),
+        ageInDays,
+      };
+    });
   }
 }
