@@ -140,6 +140,16 @@ flowchart TD
 
 **Por qué dos árbitros:** recepción deduplica el *evento* (UNIQUE); procesamiento garantiza cuántas veces *actúo* sobre él (claim). Un evento único igual puede doble-procesarse sin el claim → ese es el rol de ADR-008.
 
+### Implemented endpoints (what's actually built)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /webhooks/:providerId` | Idempotent reception (UNIQUE arbiter · ADR-007). `201 new` / `200 duplicate`. |
+| `GET /transactions/:id` | Read a transaction. Domain error (`TransactionNotFoundError`) mapped to `404` via a polymorphic exception filter, not a framework exception in the service. |
+| `GET /reconciliation-status` | Read-only observability lens: unprocessed events (`received` / `pending_manual_review` with `processed_at IS NULL`), ordered by `received_at` ascending so aging is visible. Does **not** assert orphan-hood yet — no state machine / processing-window modeled. |
+
+> Note: `processPendingEvents` (the processing flow above) is invoked internally, not over HTTP.
+
 ## Documentation
 
 - [Architecture Decision Records](./docs/adrs/) — why the system is built this way

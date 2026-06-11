@@ -46,6 +46,10 @@ When your changes create orphans:
 
 The test: Every changed line should trace directly to the user's request.
 
+### Docs in the same PR (non-negotiable)
+
+When a change touches public behavior or surface (a new/changed endpoint, flow, or invariant), the README/Mermaid/relevant docs are updated **in the same PR** — never deferred to "a follow-up". A deferred doc is debt that slips. This applies to the AI assistant as an automatic step, not only on request: if you change the surface, you refresh the docs that describe it, in the same change set. The knowledge graph is maintained by a local hook (gitignored), so it is out of scope for this rule.
+
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
@@ -100,10 +104,10 @@ If the `../study-plan/` repo is not present (the user may have cloned this proje
 - **Runtime:** Node.js 20+
 - **Language:** TypeScript strict mode (no `any` without justification)
 - **Framework:** NestJS (see ADR-002)
-- **Database:** PostgreSQL via Prisma OR TypeORM (decision pending, see ADR-XXX when written)
-- **Queue:** BullMQ over Redis
+- **Database:** PostgreSQL via Drizzle ORM (see ADR-004)
+- **Queue:** BullMQ over Redis (planned — not yet implemented)
 - **Tests:** Jest + Supertest
-- **Validation:** Zod or class-validator (decision pending)
+- **Validation:** Zod (see ADR-006)
 
 ## 8. Anti-patterns specific to this project
 
