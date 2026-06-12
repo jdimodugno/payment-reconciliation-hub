@@ -12,11 +12,11 @@ import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { EnrichedProviderEvent } from '../providers/provider-event.type';
 import { transactionsTable } from '../transactions/transaction.schema';
 import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
-import { isValidCurrency } from '@/shared/money/currency';
 import {
   AlreadyProcessedError,
   UnableToPersistTransactionError,
 } from './webhook.exception';
+import { InvariantViolationError } from '@/shared/exception/invariant-violation.exception';
 
 @Injectable()
 export class WebhookRepository {
@@ -125,7 +125,7 @@ export class WebhookRepository {
     transactionData: UpsertTransactionData,
   ): Promise<ProcessWebhookEventResult> {
     try {
-      const dbTransactionResult = await this.db.transaction(async (tx) => {
+      await this.db.transaction(async (tx) => {
         const txRow = await tx
           .insert(transactionsTable)
           .values(transactionData)
@@ -168,27 +168,12 @@ export class WebhookRepository {
           );
         }
 
-        return {
-          result: {
-            event: claim[0],
-            tx: txRow[0],
-          },
-        };
+        if (claim[0].status === 'processed' && claim[0].processedAt === null) {
+          throw new InvariantViolationError(
+            'Missing required field "processedAt" for a webhook event with "processed" status',
+          );
+        }
       });
-
-      const { event, tx } = dbTransactionResult.result;
-
-      if (!isValidCurrency(tx.currency)) {
-        throw new Error(
-          `Cannot map currency ${tx.currency} to a valid currency.`,
-        );
-      }
-
-      if (event.processedAt === null) {
-        throw new Error(
-          'Missing required field "processedAt" for a webhook event with "processed" status',
-        );
-      }
 
       return { status: 'processed' };
     } catch (error) {
@@ -196,6 +181,12 @@ export class WebhookRepository {
         return {
           status: 'already_processed',
         };
+      }
+      if (error instanceof InvariantViolationError) {
+        console.error(
+          `Failed attempt to process external event: ${eventData.externalEventId} due to data inconsistency`,
+        );
+        throw error;
       }
 
       console.error(
