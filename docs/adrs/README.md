@@ -31,13 +31,13 @@ Decisiones técnicas significativas del proyecto, en orden cronológico.
 | 007 | [Webhook idempotency](./007-webhook-idempotency.md) | Accepted | 2026-06-06 |
 | 008 | [Webhook processing idempotency](./008-webhook-processing-idempotency.md) | Accepted | 2026-06-08 |
 | 009 | [Provider event to domain transaction mapping](./009-provider-event-to-domain-transaction-mapping.md) | Accepted | 2026-06-09 |
+| 010 | [Retry & dead-letter strategy (domain-owned)](./010-retry-and-dead-letter-strategy.md) | Accepted | 2026-06-12 |
 
 ## ADRs anticipados (a escribir durante el roadmap)
 
 Estos son los que vas a escribir cuando lleguen los puntos correspondientes
 (numeración tentativa; la real se asigna al escribirlos):
 
-- Retry policy and dead letter queue (semana 3-4)
 - Reconciliation matching algorithm (semana 5)
 - Eventual consistency tradeoffs in reporting (semana 5-6)
 
