@@ -9,14 +9,25 @@ import { ProvidersService } from '../providers/providers.service';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
 import { isValidCurrency } from '@/shared/money/currency';
-import { MAX_PROCESSING_RETRIES } from './webhook.constants';
+import {
+  EVENT_MAX_PROCESSING_RETRIES,
+  WEBHOOKS_PROCESSOR_JOB_NAME,
+} from './webhook.constants';
 import { mapEventToTransaction } from './mapper/event-transaction.mapper';
+import { InjectQueue } from '@nestjs/bullmq';
+import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
+import { Queue } from 'bullmq';
+import {
+  EventNotFoundError,
+  UnableToEnqueueEventError,
+} from './webhook.exception';
 
 @Injectable()
 export class WebhookService {
   constructor(
     private providerService: ProvidersService,
     private webhookRepository: WebhookRepository,
+    @InjectQueue(WEBHOOKS_QUEUE_NAME) private webhooksQueue: Queue,
   ) {}
 
   async createWebhookNotification(
@@ -37,7 +48,23 @@ export class WebhookService {
 
     const persistedEvent = await this.webhookRepository.create(notification);
 
-    // enqueue
+    this.webhooksQueue
+      .add(
+        WEBHOOKS_PROCESSOR_JOB_NAME,
+        { id: persistedEvent.event.id },
+        {
+          attempts: 1,
+          jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_${persistedEvent.event.id}`,
+        },
+      )
+      .catch((error) => {
+        console.error(
+          new UnableToEnqueueEventError(
+            persistedEvent.event.id,
+            error as unknown as Error,
+          ),
+        );
+      });
 
     return persistedEvent;
   }
@@ -62,8 +89,16 @@ export class WebhookService {
     );
   }
 
+  async processSingleEventById(id: string): Promise<void> {
+    const eventToProcess = await this.webhookRepository.fetchEventById(id);
+    if (!eventToProcess) {
+      throw new EventNotFoundError(id);
+    }
+    await this.processSingleEvent(eventToProcess);
+  }
+
   async processSingleEvent(singleEvent: WebhookEvent): Promise<void> {
-    if (singleEvent.retries >= MAX_PROCESSING_RETRIES) {
+    if (singleEvent.retries >= EVENT_MAX_PROCESSING_RETRIES) {
       await this.webhookRepository.setEventForManualReview(
         singleEvent.id,
         PendingManualReviewReason.RETRIES_EXHAUSTED,

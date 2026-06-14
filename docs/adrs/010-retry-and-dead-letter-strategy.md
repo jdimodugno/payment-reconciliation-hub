@@ -8,7 +8,7 @@
 ## Context
 
 ADR-008 dejó el procesamiento de webhooks idempotente y **sincrónico**: el árbitro es
-el claim atómico, y el dominio ya cuenta `retries` con corte en `MAX_PROCESSING_RETRIES`
+el claim atómico, y el dominio ya cuenta `retries` con corte en `EVENT_MAX_PROCESSING_RETRIES`
 hacia `pending_manual_review` (dead-letter). Semana 3 introduce **BullMQ**: la recepción
 encola y un worker procesa async.
 
@@ -42,13 +42,13 @@ Reparto de responsabilidades:
   (nunca se encolaron) y (b) **fallos transitorios** (vuelven a quedar pendientes). Corre
   sobre snapshot, por lo que puede pisarse con la cola → el **claim atómico (ADR-008) es el
   árbitro** que hace segura esa carrera (uno gana, el otro recibe `already_processed`).
-- **Dominio:** `retries++` en fallo + corte en `MAX_PROCESSING_RETRIES` → `pending_manual_review`.
+- **Dominio:** `retries++` en fallo + corte en `EVENT_MAX_PROCESSING_RETRIES` → `pending_manual_review`.
   Único contador de reintentos = **un solo árbitro**, el problema del doble conteo desaparece
   por diseño.
 - **Determinísticos:** no entran al ciclo de retry — unsupported → manual review;
   invariante → fail-fast (rethrow sin `retries++`).
 
-Configuración: `MAX_PROCESSING_RETRIES` es **regla de dominio versionada** (idéntica en todos
+Configuración: `EVENT_MAX_PROCESSING_RETRIES` es **regla de dominio versionada** (idéntica en todos
 los envs). No se delega a config por-entorno de la cola.
 
 ## Alternatives Considered

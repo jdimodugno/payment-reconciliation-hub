@@ -22,6 +22,21 @@ import { InvariantViolationError } from '@/shared/exception/invariant-violation.
 export class WebhookRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
+  async fetchEventById(id: string): Promise<WebhookEvent | null> {
+    const [row] = await this.db
+      .select()
+      .from(webhooksTable)
+      .where(eq(webhooksTable.id, id));
+
+    return row
+      ? {
+          ...row,
+          receivedAt: row.receivedAt.toISOString(),
+          processedAt: row.processedAt?.toISOString() ?? null,
+        }
+      : null;
+  }
+
   async create(
     data: NewWebhookEvent,
   ): Promise<{ status: 'created' | 'existed'; event: WebhookEvent }> {
@@ -141,9 +156,7 @@ export class WebhookRepository {
           .returning();
 
         if (txRow.length === 0) {
-          throw new UnableToPersistTransactionError(
-            `External event: ${eventData.externalEventId} cannot persist transaction`,
-          );
+          throw new UnableToPersistTransactionError(eventData.externalEventId);
         }
 
         const claim = await tx
@@ -163,9 +176,7 @@ export class WebhookRepository {
           .returning();
 
         if (claim.length === 0) {
-          throw new AlreadyProcessedError(
-            `External event: ${eventData.externalEventId} is already processed`,
-          );
+          throw new AlreadyProcessedError(eventData.externalEventId);
         }
 
         if (claim[0].status === 'processed' && claim[0].processedAt === null) {
