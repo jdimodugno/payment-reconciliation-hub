@@ -3,6 +3,9 @@ import { WebhookController } from './webhooks.controller';
 import { WebhookService } from './webhooks.service';
 import { WebhookRepository } from './webhooks.repository';
 import { ProvidersModule } from '../providers/providers.module';
+import { BullModule } from '@nestjs/bullmq';
+import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
+import { WebhooksConsumer } from './webhooks.consumer';
 
 /**
  * WebhooksModule
@@ -25,8 +28,13 @@ import { ProvidersModule } from '../providers/providers.module';
  * - SignatureVerifierService
  */
 @Module({
-  imports: [ProvidersModule],
+  imports: [
+    ProvidersModule,
+    BullModule.registerQueue({
+      name: WEBHOOKS_QUEUE_NAME,
+    }),
+  ],
   controllers: [WebhookController],
-  providers: [WebhookService, WebhookRepository],
+  providers: [WebhookService, WebhookRepository, WebhooksConsumer],
 })
 export class WebhooksModule {}
