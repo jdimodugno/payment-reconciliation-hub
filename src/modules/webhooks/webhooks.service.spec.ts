@@ -9,10 +9,7 @@ import {
   WEBHOOKS_QUEUE_NAME,
 } from './webhook.constants';
 import { getQueueToken } from '@nestjs/bullmq';
-import {
-  EventNotFoundError,
-  UnableToEnqueueEventError,
-} from './webhook.exception';
+import { EventNotFoundError } from './webhook.exception';
 
 const webhookRepository = {
   setEventForManualReview: jest.fn(),
