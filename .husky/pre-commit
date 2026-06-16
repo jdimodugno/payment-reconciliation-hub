@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "$ROOT_DIR"
+
+# Debug helper
+debug() {
+  case "${HUSKY_DEBUG:-}" in
+    1|true|TRUE|True) printf "[husky][pre-commit] %s\n" "$*" ;;
+  esac
+}
+
+debug "running lint"
+pnpm lint
+debug "done"
+
+debug "running typecheck"
+pnpm typecheck
+debug "done"
