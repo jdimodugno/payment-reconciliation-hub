@@ -9,7 +9,10 @@ import { WebhookService } from '@/modules/webhooks/webhooks.service';
 import { eq } from 'drizzle-orm';
 import { WebhookEvent } from '@/modules/webhooks/webhook.types';
 
-// Procesamiento NO es HTTP: se dispara llamando service.processPendingEvents() contra DB real.
+// Procesamiento NO es HTTP. Dos formas de dispararlo contra DB real:
+//  - directo: service.processSingleEvent(row) → síncrono, aísla la unidad de procesamiento.
+//  - async real: service.createWebhookNotification(...) → persiste 'received' + encola;
+//    el worker registrado (BullMQ) consume y procesa en background (hay que ESPERARLO).
 describe('Webhook processing (e2e)', () => {
   let app: INestApplication;
   let db: DrizzleDB;
@@ -65,6 +68,24 @@ describe('Webhook processing (e2e)', () => {
 
   const countTransactions = async () =>
     (await db.select().from(transactionsTable)).length;
+
+  const fetchWebhook = async (id: string) =>
+    (await db.select().from(webhooksTable).where(eq(webhooksTable.id, id)))[0];
+
+  // Espera activa: re-evalúa `check` hasta que sea truthy o se agote el timeout.
+  // Necesario porque el worker procesa ASYNC: tras encolar, el efecto no es inmediato.
+  // Trade-off conocido (deuda Día 11): un timeout muy ajustado puede ponerse flaky.
+  const waitFor = async (
+    check: () => Promise<boolean>,
+    { timeoutMs = 5000, intervalMs = 50 } = {},
+  ): Promise<void> => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (await check()) return;
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error(`waitFor: condición no cumplida en ${timeoutMs}ms`);
+  };
 
   describe('idempotencia de procesamiento (el test del día)', () => {
     // LA aserción que cuenta la verdad: procesar 2 veces, UNA sola Transaction.
@@ -131,5 +152,40 @@ describe('Webhook processing (e2e)', () => {
       expect(post.status).toBe('pending_manual_review');
       expect(post.reason).toBe('retries_exhausted');
     });
+  });
+
+  describe('flujo async end-to-end (recepción → cola → worker → transacción)', () => {
+    const rawStripeEvent = {
+      id: 'evt_async_1',
+      object: 'event',
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_async_1', amount: 2000, currency: 'usd' } },
+    };
+
+    it('un webhook recibido se procesa async vía worker → count(transactions) === 1', async () => {
+      expect(await countTransactions()).toBe(0);
+      const { event } = await service.createWebhookNotification(
+        providerId,
+        rawStripeEvent,
+      );
+
+      await waitFor(
+        async () => (await fetchWebhook(event.id)).status !== 'received',
+      );
+
+      const processed = await fetchWebhook(event.id);
+      expect(await countTransactions()).toBe(1);
+      expect(processed.status).toBe('processed');
+      expect(processed.processedAt).not.toBeNull();
+    });
+
+    // El claim atómico (Día 8) sigue siendo el árbitro bajo at-least-once.
+    // Diferido (costo/beneficio): el claim como árbitro ya está cubierto determinísticamente
+    // en 'procesar el mismo evento 2 veces → count === 1' (vía processSingleEvent directo).
+    // Un e2e de reentrega real exigiría derrotar el jobId dedup + timing concurrente = flaky.
+    // Reabrir si: se observa doble-Transaction en prod, o se endurece el aislamiento de cola en e2e.
+    it.todo(
+      'reentrega del mismo evento (encolar 2x) → sigue count === 1 (claim como árbitro)',
+    );
   });
 });

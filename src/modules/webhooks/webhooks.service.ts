@@ -16,7 +16,7 @@ import {
 import { mapEventToTransaction } from './mapper/event-transaction.mapper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
-import { Queue } from 'bullmq';
+import { Job, Queue } from 'bullmq';
 import {
   EventNotFoundError,
   UnableToEnqueueEventError,
@@ -48,23 +48,14 @@ export class WebhookService {
 
     const persistedEvent = await this.webhookRepository.create(notification);
 
-    this.webhooksQueue
-      .add(
-        WEBHOOKS_PROCESSOR_JOB_NAME,
-        { id: persistedEvent.event.id },
-        {
-          attempts: 1,
-          jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_${persistedEvent.event.id}`,
-        },
-      )
-      .catch((error) => {
-        console.error(
-          new UnableToEnqueueEventError(
-            persistedEvent.event.id,
-            error as unknown as Error,
-          ),
-        );
-      });
+    this.enqueueEvent(persistedEvent.event).catch((error) => {
+      console.warn(
+        new UnableToEnqueueEventError(
+          persistedEvent.event.id,
+          error as unknown as Error,
+        ),
+      );
+    });
 
     return persistedEvent;
   }
@@ -84,8 +75,14 @@ export class WebhookService {
       `There are ${pendingEventsResult.elements.length} events to process`,
     );
 
-    await Promise.allSettled(
-      pendingEventsResult.elements.map((evt) => this.processSingleEvent(evt)),
+    await Promise.all(
+      pendingEventsResult.elements.map((evt) =>
+        this.enqueueEvent(evt).catch((error) => {
+          console.error(
+            new UnableToEnqueueEventError(evt.id, error as unknown as Error),
+          );
+        }),
+      ),
     );
   }
 
@@ -97,11 +94,23 @@ export class WebhookService {
     await this.processSingleEvent(eventToProcess);
   }
 
+  private async enqueueEvent(evt: WebhookEvent): Promise<Job> {
+    return this.webhooksQueue.add(
+      WEBHOOKS_PROCESSOR_JOB_NAME,
+      { id: evt.id },
+      {
+        attempts: 1,
+        jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_${evt.id}`,
+      },
+    );
+  }
+
   async processSingleEvent(singleEvent: WebhookEvent): Promise<void> {
     if (singleEvent.retries >= EVENT_MAX_PROCESSING_RETRIES) {
-      await this.webhookRepository.setEventForManualReview(
+      await this.transitionToManualReview(
         singleEvent.id,
         PendingManualReviewReason.RETRIES_EXHAUSTED,
+        { maxRetries: EVENT_MAX_PROCESSING_RETRIES },
       );
       return;
     }
@@ -119,9 +128,10 @@ export class WebhookService {
     );
 
     if (!isValidCurrency(enrichedEventData.currency)) {
-      await this.webhookRepository.setEventForManualReview(
+      await this.transitionToManualReview(
         singleEvent.id,
         PendingManualReviewReason.UNSUPPORTED_CURRENCY,
+        { currency: enrichedEventData.currency },
       );
       return;
     }
@@ -129,13 +139,10 @@ export class WebhookService {
     const eventToTransaction = mapEventToTransaction(enrichedEventData.type);
 
     if (!eventToTransaction) {
-      console.error(
-        `Invalid event -> transaction map for value: ${enrichedEventData.type} with provider ${providerInstance.name}`,
-      );
-
-      await this.webhookRepository.setEventForManualReview(
+      await this.transitionToManualReview(
         singleEvent.id,
         PendingManualReviewReason.UNSUPPORTED_EVENT_TYPE,
+        { type: enrichedEventData.type, provider: providerInstance.name },
       );
       return;
     }
@@ -157,7 +164,9 @@ export class WebhookService {
       rawTxData,
     );
 
-    console.log(`${singleEvent.id} ended with status: ${processResult.status}`);
+    console.log(
+      `Event ${singleEvent.id} ended with status: ${processResult.status}`,
+    );
   }
 
   async findUnprocessedEvents(): Promise<UnprocessedEvent[]> {
@@ -176,5 +185,15 @@ export class WebhookService {
         ageInDays,
       };
     });
+  }
+
+  private async transitionToManualReview(
+    id: string,
+    reason: PendingManualReviewReason,
+    context: Record<string, string | number>,
+  ): Promise<void> {
+    await this.webhookRepository.setEventForManualReview(id, reason);
+    const messageToPrint = `Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
+    console.warn(messageToPrint);
   }
 }
