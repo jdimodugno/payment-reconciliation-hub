@@ -1,0 +1,16 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "$ROOT_DIR"
+
+# Debug helper
+debug() {
+  case "${HUSKY_DEBUG:-}" in
+    1|true|TRUE|True) printf "[husky][pre-push] %s\n" "$*" ;;
+  esac
+}
+
+debug "running unit tests"
+pnpm test
+debug "done"
