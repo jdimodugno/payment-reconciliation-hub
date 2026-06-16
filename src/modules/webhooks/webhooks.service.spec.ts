@@ -9,7 +9,10 @@ import {
   WEBHOOKS_QUEUE_NAME,
 } from './webhook.constants';
 import { getQueueToken } from '@nestjs/bullmq';
-import { EventNotFoundError } from './webhook.exception';
+import {
+  EventNotFoundError,
+  UnableToEnqueueEventError,
+} from './webhook.exception';
 
 const webhookRepository = {
   setEventForManualReview: jest.fn(),
@@ -254,6 +257,107 @@ describe('WebhookService', () => {
           jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-enqueue`,
         },
       );
+    });
+  });
+
+  describe('WebhookService.processPendingEvents (recovery sweep)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      webhooksQueue.add.mockResolvedValue({});
+    });
+
+    it('sin eventos pendientes (status "none") → no encola nada', async () => {
+      webhookRepository.getPendingWebhookEvents.mockResolvedValue({
+        status: 'none',
+        elements: [],
+      });
+
+      await service.processPendingEvents();
+      expect(webhooksQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('re-encola TODOS los eventos pendientes, por id', async () => {
+      const pending = [
+        buildEvent({ id: 'evt-a' }),
+        buildEvent({ id: 'evt-b' }),
+        buildEvent({ id: 'evt-c' }),
+      ];
+      webhookRepository.getPendingWebhookEvents.mockResolvedValue({
+        status: 'found',
+        elements: pending,
+      });
+
+      await service.processPendingEvents();
+
+      expect(webhooksQueue.add).toHaveBeenNthCalledWith(
+        1,
+        WEBHOOKS_PROCESSOR_JOB_NAME,
+        { id: 'evt-a' },
+        {
+          attempts: 1,
+          jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-a`,
+        },
+      );
+      expect(webhooksQueue.add).toHaveBeenNthCalledWith(
+        2,
+        WEBHOOKS_PROCESSOR_JOB_NAME,
+        { id: 'evt-b' },
+        {
+          attempts: 1,
+          jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-b`,
+        },
+      );
+      expect(webhooksQueue.add).toHaveBeenNthCalledWith(
+        3,
+        WEBHOOKS_PROCESSOR_JOB_NAME,
+        { id: 'evt-c' },
+        {
+          attempts: 1,
+          jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-c`,
+        },
+      );
+      expect(webhooksQueue.add).toHaveBeenCalledTimes(3);
+    });
+
+    it('un enqueue que falla NO frena a los demás (no-starvation) y processPendingEvents resuelve', async () => {
+      const pending = [
+        buildEvent({ id: 'evt-ok-1' }),
+        buildEvent({ id: 'evt-fails' }),
+        buildEvent({ id: 'evt-ok-2' }),
+      ];
+      webhookRepository.getPendingWebhookEvents.mockResolvedValue({
+        status: 'found',
+        elements: pending,
+      });
+
+      webhooksQueue.add.mockImplementation((_job, data: { id: string }) =>
+        data.id === 'evt-fails'
+          ? Promise.reject(new Error('redis down'))
+          : Promise.resolve({}),
+      );
+
+      await expect(service.processPendingEvents()).resolves.toBeUndefined();
+      expect(webhooksQueue.add).toHaveBeenCalledTimes(3);
+    });
+
+    it('un enqueue que falla se loguea a nivel error con el id del evento', async () => {
+      const errorSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      const pending = [buildEvent({ id: 'evt-fails' })];
+      webhookRepository.getPendingWebhookEvents.mockResolvedValue({
+        status: 'found',
+        elements: pending,
+      });
+      webhooksQueue.add.mockRejectedValueOnce(new Error('redis down'));
+
+      await service.processPendingEvents();
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('evt-fails'),
+        }),
+      );
+      errorSpy.mockRestore();
     });
   });
 });
