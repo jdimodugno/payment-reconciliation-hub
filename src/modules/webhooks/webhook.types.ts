@@ -2,7 +2,6 @@ import { webhookEventStatusEnum } from './webhook.schema';
 
 export enum PendingManualReviewReason {
   UNSUPPORTED_CURRENCY = 'unsupported_currency',
-  RETRIES_EXHAUSTED = 'retries_exhausted',
   UNSUPPORTED_EVENT_TYPE = 'unsupported_event_type',
 }
 

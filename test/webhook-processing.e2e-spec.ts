@@ -135,25 +135,6 @@ describe('Webhook processing (e2e)', () => {
     );
   });
 
-  describe('dead-letter por agotamiento (retriable)', () => {
-    it('evento con retries >= MAX → pending_manual_review, reason RETRIES_EXHAUSTED, sin reprocesar', async () => {
-      const rawRow = await seedReceivedWebhook({ retries: 3 });
-      const row: WebhookEvent = {
-        ...rawRow,
-        receivedAt: rawRow.receivedAt.toISOString(),
-        processedAt: null,
-      };
-      await service.processSingleEvent(row);
-      const [post] = await db
-        .select()
-        .from(webhooksTable)
-        .where(eq(webhooksTable.id, row.id));
-
-      expect(post.status).toBe('pending_manual_review');
-      expect(post.reason).toBe('retries_exhausted');
-    });
-  });
-
   describe('flujo async end-to-end (recepción → cola → worker → transacción)', () => {
     const rawStripeEvent = {
       id: 'evt_async_1',

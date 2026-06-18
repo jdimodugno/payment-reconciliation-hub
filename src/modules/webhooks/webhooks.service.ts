@@ -9,10 +9,7 @@ import { ProvidersService } from '../providers/providers.service';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
 import { isValidCurrency } from '@/shared/money/currency';
-import {
-  EVENT_MAX_PROCESSING_RETRIES,
-  WEBHOOKS_PROCESSOR_JOB_NAME,
-} from './webhook.constants';
+import { WEBHOOKS_PROCESSOR_JOB_NAME } from './webhook.constants';
 import { mapEventToTransaction } from './mapper/event-transaction.mapper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
@@ -99,22 +96,12 @@ export class WebhookService {
       WEBHOOKS_PROCESSOR_JOB_NAME,
       { id: evt.id },
       {
-        attempts: 1,
         jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_${evt.id}`,
       },
     );
   }
 
   async processSingleEvent(singleEvent: WebhookEvent): Promise<void> {
-    if (singleEvent.retries >= EVENT_MAX_PROCESSING_RETRIES) {
-      await this.transitionToManualReview(
-        singleEvent.id,
-        PendingManualReviewReason.RETRIES_EXHAUSTED,
-        { maxRetries: EVENT_MAX_PROCESSING_RETRIES },
-      );
-      return;
-    }
-
     const rawProvider = await this.providerService.isValidProvider(
       singleEvent.providerId,
     );
