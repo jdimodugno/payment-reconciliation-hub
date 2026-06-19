@@ -203,17 +203,6 @@ export class WebhookRepository {
       console.error(
         `Failed attempt to process external event: ${eventData.externalEventId}`,
       );
-      await this.db
-        .update(webhooksTable)
-        .set({
-          retries: sql`${webhooksTable.retries} + 1`,
-        })
-        .where(
-          and(
-            eq(webhooksTable.externalEventId, eventData.externalEventId),
-            eq(webhooksTable.providerId, transactionData.providerId),
-          ),
-        );
 
       throw error;
     }

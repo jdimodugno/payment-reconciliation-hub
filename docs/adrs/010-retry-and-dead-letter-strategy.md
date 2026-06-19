@@ -1,7 +1,7 @@
 # 010 — Retry & Dead-Letter Strategy (Domain-Owned)
 
-**Status:** Accepted
-**Date:** 2026-06-12
+**Status:** Accepted (B, design-first) → **Amended 2026-06-18** (converged to C during implementation — see Amendment)
+**Date:** 2026-06-12 (amended 2026-06-18)
 **Authors:** Juan Di Modugno
 **Tags:** domain, reliability, async, queue, dead-letter
 
@@ -109,3 +109,74 @@ Si la latencia de reproceso transitorio se vuelve inaceptable para el SLA, migra
 **Alternative C**: activar el backoff de BullMQ para transitorios y coordinar que el
 dominio incremente `retries` solo en el agotamiento de la cola. Trigger explícito:
 métricas de tiempo-a-reproceso por encima del umbral de negocio.
+
+---
+
+## Amendment — 2026-06-18 (la implementación revisó la decisión: B → C)
+
+La Decision B se eligió **design-first** (d11). Al aterrizar el retry exponencial + backoff
++ DLQ (d14), la implementación reveló que B era inferior y el sistema **convergió a la
+Alternative C**: BullMQ ownea el retry de los fallos transitorios; el dominio solo enruta
+los fallos permanentes. La Decision y las Alternatives de arriba se conservan **intactas**
+como el razonamiento original que la realidad corrigió (T4: el ADR registra cómo se pensó,
+incluso donde se pensó distinto a como terminó).
+
+### 1. Por qué B se cayó: el contador de dominio se quedó sin trabajo (vestigial)
+
+El `retries` de dominio (heredado del flujo síncrono del ADR-008) era un **contador único
+para dos clases de fallo de naturaleza distinta** — los amontonaba (infra y dominio por igual).
+
+Al separar las clases por su naturaleza (retriable vs no), el contador único se quedó sin
+ninguna clase coherente que contar:
+
+- **Fallo de dominio:** el catch lo marca `pending_manual_review` y el job **termina exitoso**
+  (es un *branch* del código, no una excepción). No se reentrega → el `retries` de ese evento
+  **nunca pasa de 1** → 1 strike → manual review. El corte en `EVENT_MAX_PROCESSING_RETRIES`
+  nunca se alcanza.
+- **Fallo transitorio/infra:** el reintento ahora lo cuenta **BullMQ `attempts`** (en Redis),
+  no el dominio.
+
+Conclusión: ninguna clase de fallo quedaba para que el contador de dominio contara → es
+**vestigial**. Se eliminó la lógica (`retries++` en el repo, el guard de `EXHAUSTED` del
+service, la constante `EVENT_MAX_PROCESSING_RETRIES`) y sus tests muertos. La columna
+`retries` queda como deuda de borrado en una migración futura.
+
+### 2. Qué compra C que B no daba
+
+- **Backoff inmediato del transitorio:** BullMQ reintenta con backoff exponencial en vez de
+  esperar la cadencia del barrido (la latencia de reproceso que era el `Negative` de B).
+- **Durabilidad del retry fuera del worker:** la agenda de reintentos vive en **Redis**, no
+  en la memoria del worker. Si el proceso muere (deploy/OOM), el timer no se evapora: otro
+  worker retoma. La fuente de verdad del reintento está fuera del proceso que falla.
+- **Service más simple:** no hay caso `EXHAUSTED` que atender en la lógica de dominio.
+
+### 3. Un árbitro por clase de fallo (no es el "doble árbitro" que B temía)
+
+El doble árbitro de B aparecía porque BullMQ y el dominio contaban **el mismo** fallo. En C
+no hay solapamiento: **cada clase de fallo va a un solo árbitro**.
+
+- **Default retriable:** el espacio de fallos transitorios es infinito/impredecible; el de
+  permanentes es chico/conocido. Se enumeran los pocos permanentes (`NonRetriableError` +
+  subclases) y **todo lo demás cae al default retriable**. Es seguro porque el claim atómico
+  (ADR-008) garantiza idempotencia: reintentar no duplica.
+- **Routing:** infra/transitorio → se rethrowea fuerte → BullMQ reintenta (`attempts` +
+  backoff) → al agotarse, failed set (el "DLQ" por default de BullMQ). Permanente → el
+  consumer traduce `NonRetriableError` → `UnrecoverableError`, que manda el job al failed set
+  **sin reintentar** (override de `attempts`).
+- **T3 — dónde vive la traducción:** el **service** tira excepciones de dominio puras
+  (ignorante de la cola); el **consumer** (adaptador BullMQ) es quien traduce a la semántica
+  de la cola. `attempts` es propiedad del *job* → vive en `defaultJobOptions`, no como
+  parámetro por-caller.
+
+### 4. Regresión cazada: `parseWebhook` 400 → 500
+
+Reclasificar `parseWebhook` de `BadRequestException` a `NonRetriableError` **rompía el
+contrato HTTP del POST**: sin exception filter, el 400 de ingesta se volvía 500, e induciría
+al provider a reintentar la **entrega** del webhook. Resolución (opción A): el límite importa.
+
+- `parse` → `BadRequestException` (400, ocurre en **ingesta**, camino HTTP).
+- `fetch` → `NonRetriableError` (ocurre en el **worker**).
+
+`parseWebhook` corriendo en el worker es inalcanzable (ya pasó en ingesta), así que la
+reclasificación no aplica ahí. Simetría: el mismo `NonRetriableError` se traduce a
+`UnrecoverableError` en el borde-cola y debería traducirse a 400 en el borde-HTTP.
