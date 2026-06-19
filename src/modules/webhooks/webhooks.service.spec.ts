@@ -73,18 +73,6 @@ describe('WebhookService', () => {
       jest.clearAllMocks();
     });
 
-    describe('guard: retries agotados', () => {
-      it('retries >= MAX → setEventForManualReview(RETRIES_EXHAUSTED) y NO llama markEventAsProcessed', async () => {
-        const event = buildEvent({ retries: 3 });
-        await service.processSingleEvent(event);
-        expect(webhookRepository.markEventAsProcessed).not.toHaveBeenCalled();
-        expect(webhookRepository.setEventForManualReview).toHaveBeenCalledWith(
-          event.id,
-          PendingManualReviewReason.RETRIES_EXHAUSTED,
-        );
-      });
-    });
-
     describe('guard: currency no soportada', () => {
       it('currency inválida → setEventForManualReview(UNSUPPORTED_CURRENCY) y NO procesa', async () => {
         const event = buildEvent();
@@ -234,7 +222,7 @@ describe('WebhookService', () => {
       jest.clearAllMocks();
     });
 
-    it('tras persistir, encola por id con attempts:1 y jobId compuesto', async () => {
+    it('tras persistir, encola por id con jobId compuesto', async () => {
       providersService.tryParsingRawProviderEvent.mockResolvedValue({
         externalEventId: 'ext-1',
         rawEventData: {},
@@ -250,7 +238,6 @@ describe('WebhookService', () => {
         WEBHOOKS_PROCESSOR_JOB_NAME,
         { id: 'evt-enqueue' },
         {
-          attempts: 1,
           jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-enqueue`,
         },
       );
@@ -291,7 +278,6 @@ describe('WebhookService', () => {
         WEBHOOKS_PROCESSOR_JOB_NAME,
         { id: 'evt-a' },
         {
-          attempts: 1,
           jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-a`,
         },
       );
@@ -300,7 +286,6 @@ describe('WebhookService', () => {
         WEBHOOKS_PROCESSOR_JOB_NAME,
         { id: 'evt-b' },
         {
-          attempts: 1,
           jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-b`,
         },
       );
@@ -309,7 +294,6 @@ describe('WebhookService', () => {
         WEBHOOKS_PROCESSOR_JOB_NAME,
         { id: 'evt-c' },
         {
-          attempts: 1,
           jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-c`,
         },
       );

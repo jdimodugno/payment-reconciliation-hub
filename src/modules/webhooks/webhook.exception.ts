@@ -1,3 +1,5 @@
+import { NonRetriableError } from '@/shared/exception/non-retriable.exception';
+
 export class UnableToPersistTransactionError extends Error {
   constructor(externalEventId: string) {
     super(`External event: ${externalEventId} cannot persist transaction`);
@@ -25,5 +27,14 @@ export class EventNotFoundError extends Error {
   constructor(id: string) {
     super(`Unable to find event with id: ${id}`);
     this.name = 'EventNotFoundError';
+  }
+}
+
+export class MalformedProviderEventError extends NonRetriableError {
+  constructor(payload: unknown) {
+    super(
+      `Event is malformed, cannot be processed nor processed. Payload: ${JSON.stringify(payload)}`,
+    );
+    this.name = 'MalformedProviderEventError';
   }
 }

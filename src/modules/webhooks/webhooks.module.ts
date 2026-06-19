@@ -32,6 +32,13 @@ import { WebhooksConsumer } from './webhooks.consumer';
     ProvidersModule,
     BullModule.registerQueue({
       name: WEBHOOKS_QUEUE_NAME,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 1000,
+        },
+      },
     }),
   ],
   controllers: [WebhookController],

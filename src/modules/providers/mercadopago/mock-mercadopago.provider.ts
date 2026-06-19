@@ -11,6 +11,8 @@ import {
   RawMercadoPagoEventAction,
 } from './mercadopago-payload.type';
 import { BadRequestException } from '@nestjs/common';
+import { NotFoundInExternalSourceError } from '@/shared/exception/not-found-external-source.exception';
+import { MalformedProviderEventError } from '@/modules/webhooks/webhook.exception';
 
 const getType = (
   rawEventType: RawMercadoPagoEventAction,
@@ -55,10 +57,15 @@ type FakeMPObject = {
   status: string;
 };
 
+const MOCK_NOT_FOUND_ID = 'mp_notfound_123';
+
 const fakeFetchMercadoPagoTxDetail = async (
   txId: string,
 ): Promise<FakeMPObject> => {
   if (!txId) throw new Error('Id is required for tx detail fetching');
+  if (txId === MOCK_NOT_FOUND_ID) {
+    throw new NotFoundInExternalSourceError(txId, 'MERCADO_PAGO');
+  }
   const mockedMPData = {
     id: '99999999',
     amount: 123,
@@ -88,9 +95,7 @@ export class MockMercadoPagoProvider implements PaymentProvider {
     rawEvent: RawProviderEvent,
   ): Promise<EnrichedProviderEvent> {
     if (!isProcessableMercadoPagoEvent(rawEvent.rawEventData)) {
-      throw new BadRequestException(
-        `Unable to process webhook event from provider - ${this.name}`,
-      );
+      throw new MalformedProviderEventError(rawEvent.rawEventData);
     }
     // TODO: real GET /v1/payments/{id}
     const txData = await fakeFetchMercadoPagoTxDetail(

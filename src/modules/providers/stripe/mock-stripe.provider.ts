@@ -10,6 +10,7 @@ import {
   StripeEnrichedPayload,
   StripeRawPayload,
 } from './stripe-payload.type';
+import { MalformedProviderEventError } from '@/modules/webhooks/webhook.exception';
 import { BadRequestException } from '@nestjs/common';
 
 const getType = (rawEventType: RawStripeEventType): ProviderEventType => {
@@ -78,9 +79,7 @@ export class MockStripeProvider implements PaymentProvider {
     rawEvent: RawProviderEvent,
   ): Promise<EnrichedProviderEvent> {
     if (!isProcessableStripeEvent(rawEvent.rawEventData)) {
-      throw new BadRequestException(
-        `Unable to process webhook event from provider - ${this.name}`,
-      );
+      throw new MalformedProviderEventError(rawEvent.rawEventData);
     }
 
     return {
