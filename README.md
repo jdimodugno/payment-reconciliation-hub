@@ -106,39 +106,52 @@ npm run test:cov      # with coverage
             └─────────────┘
 ```
 
-### Webhook → Transaction flow (idempotent — what's actually built)
+### Webhook → Transaction flow (async + idempotent — what's actually built)
 
-> The ASCII above is the target architecture. This is the flow implemented today:
-> two idempotency arbiters (reception + processing) and a dead-letter path.
+> Reception and processing are **decoupled**: the endpoint persists + acks fast, and a
+> BullMQ worker processes the event off the critical path. Two idempotency arbiters
+> (reception + processing) make the at-least-once delivery safe; failures route by class.
 
 ```mermaid
 flowchart TD
   P[Provider webhook] -->|POST /webhooks/:providerId| C[WebhookController · thin]
   C --> S1[WebhookService]
   S1 --> R1[WebhookRepository]
-  R1 -->|"UNIQUE(providerId, externalEventId)<br/>reception arbiter · ADR-007"| WE[(webhook_events)]
+  R1 -->|"UNIQUE(providerId, externalEventId)<br/>reception arbiter · ADR-007"| WE[(webhook_events · received)]
   S1 -. "201 new / 200 duplicate" .-> P
 
-  WE --> PP
+  S1 -.->|"best-effort enqueue (post-200)"| Q
+  WE -->|"processed_at IS NULL<br/>recovery sweep (lost + transient)"| SW[processPendingEvents]
+  SW -.->|"re-enqueue"| Q
 
-  subgraph PP[processPendingEvents · policy + guards]
+  Q{{"BullMQ queue · Redis"}} --> W[Worker · consumer adapter]
+  W --> PROC
+
+  subgraph PROC[processSingleEventById · domain]
     direction TB
-    G1{"retries ≥ MAX?"} -->|yes| DL
-    G1 -->|no| EN["provider.fetchDetails<br/>anti-corruption · ADR-009 layer 1"]
-    EN --> G2{"currency soportada?"}
-    G2 -->|no| DL
+    EN["provider.fetchDetails<br/>anti-corruption · ADR-009 layer 1"] --> G2{"currency soportada?"}
+    G2 -->|no| NR
     G2 -->|yes| MAP["event → transaction mapper<br/>ADR-009 layer 2"]
-    MAP -->|null| DL
-    MAP --> CLAIM["claim atómico + upsert<br/>(misma txn) · ADR-008"]
+    MAP -->|null| NR
+    MAP --> CLAIM["claim atómico + upsert<br/>UPDATE … WHERE processed_at IS NULL<br/>(misma txn) · ADR-008"]
   end
 
-  CLAIM -->|claim ganado| TX[(transactions)]
+  CLAIM -->|"claim ganado (1 fila)"| TX[(transactions)]
   CLAIM -->|"claim perdido (0 filas)"| AP["already_processed · no-op idempotente"]
-  CLAIM -->|error real| RT["retries++ · rethrow (T5)"]
-  DL["pending_manual_review<br/>dead-letter"]
+  CLAIM -->|"error transitorio/infra"| TR["rethrow → BullMQ attempts + backoff<br/>→ exhausted → failed set (DLQ)"]
+  NR["NonRetriableError"] -->|"consumer → UnrecoverableError (sin reintentar)"| DL["pending_manual_review<br/>dead-letter"]
 ```
 
-**Por qué dos árbitros:** recepción deduplica el *evento* (UNIQUE); procesamiento garantiza cuántas veces *actúo* sobre él (claim). Un evento único igual puede doble-procesarse sin el claim → ese es el rol de ADR-008.
+**Por qué dos árbitros:** recepción deduplica el *evento* (UNIQUE); procesamiento garantiza cuántas veces *actúo* sobre él (claim). Un evento único igual puede doble-procesarse bajo at-least-once sin el claim → ese es el rol de ADR-008.
+
+**Un árbitro por clase de fallo (ADR-010):** transitorio/infra → BullMQ reintenta con backoff (durabilidad en Redis, sobrevive a la muerte del worker) → failed set al agotarse; permanente (lista finita: `NonRetriableError`) → el consumer lo traduce a `UnrecoverableError` (no reintenta) → `pending_manual_review`. No hay doble conteo: cada clase va a un solo árbitro. El default es **retriable**, seguro porque el claim hace el reproceso idempotente.
+
+### How the queue is used
+
+- **Producer:** tras persistir el evento como `received` y devolver el 200, el service encola un job (pass-by-id, `jobId` para dedup de in-flight) **best-effort** — el ack al provider no espera al enqueue (200-post-save).
+- **Consumer:** el worker BullMQ toma el job y llama `processSingleEventById`. La cola es transporte; la corrección vive en el dominio (claim atómico).
+- **Recovery sweep:** `processPendingEvents` barre `processed_at IS NULL` y re-encola — cubre las dos clases que la cola sola no puede: mensajes que nunca se encolaron (enqueue falló) y fallos transitorios. El claim hace segura la carrera cola↔barrido.
+- **Retry/DLQ:** `attempts` + backoff exponencial viven en `defaultJobOptions` (propiedad del job, no por-caller). El "DLQ" por default es el failed set de BullMQ. Ver ADR-010.
 
 ### Implemented endpoints (what's actually built)
 

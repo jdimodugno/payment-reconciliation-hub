@@ -160,13 +160,23 @@ describe('Webhook processing (e2e)', () => {
       expect(processed.processedAt).not.toBeNull();
     });
 
-    // El claim atómico (Día 8) sigue siendo el árbitro bajo at-least-once.
-    // Diferido (costo/beneficio): el claim como árbitro ya está cubierto determinísticamente
-    // en 'procesar el mismo evento 2 veces → count === 1' (vía processSingleEvent directo).
-    // Un e2e de reentrega real exigiría derrotar el jobId dedup + timing concurrente = flaky.
-    // Reabrir si: se observa doble-Transaction en prod, o se endurece el aislamiento de cola en e2e.
-    it.todo(
-      'reentrega del mismo evento (encolar 2x) → sigue count === 1 (claim como árbitro)',
-    );
+    it('reentrega del mismo evento (encolar 2x) → sigue count === 1 (claim como árbitro)', async () => {
+      const seededEvent = await seedReceivedWebhook();
+
+      await Promise.all([
+        service.processSingleEventById(seededEvent.id),
+        service.processSingleEventById(seededEvent.id),
+      ]);
+
+      const [row] = await db
+        .select()
+        .from(webhooksTable)
+        .where(eq(webhooksTable.id, seededEvent.id));
+
+      expect(row).not.toBeFalsy();
+      expect(row.status).toBe('processed');
+      expect(row.processedAt).not.toBeNull();
+      expect(await countTransactions()).toBe(1);
+    });
   });
 });
