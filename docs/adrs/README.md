@@ -32,6 +32,7 @@ Decisiones técnicas significativas del proyecto, en orden cronológico.
 | 008 | [Webhook processing idempotency](./008-webhook-processing-idempotency.md) | Accepted | 2026-06-08 |
 | 009 | [Provider event to domain transaction mapping](./009-provider-event-to-domain-transaction-mapping.md) | Accepted | 2026-06-09 |
 | 010 | [Retry & dead-letter strategy (domain-owned)](./010-retry-and-dead-letter-strategy.md) | Accepted | 2026-06-12 |
+| 011 | [Dead-letter as domain annex table](./011-dead-letter-domain-annex-table.md) | Proposed | 2026-06-23 |
 
 ## ADRs anticipados (a escribir durante el roadmap)
 
