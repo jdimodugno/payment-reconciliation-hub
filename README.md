@@ -139,7 +139,7 @@ flowchart TD
   CLAIM -->|"claim ganado (1 fila)"| TX[(transactions)]
   CLAIM -->|"claim perdido (0 filas)"| AP["already_processed · no-op idempotente"]
   CLAIM -->|"error transitorio/infra"| TR["rethrow → BullMQ attempts + backoff<br/>→ exhausted → failed set (DLQ)"]
-  NR["NonRetriableError"] -->|"consumer → UnrecoverableError (sin reintentar)"| DL["pending_manual_review<br/>dead-letter"]
+  NR["NonRetriableError"] -->|"consumer → UnrecoverableError (sin reintentar)"| DL["webhook_events.status = pending_manual_review<br/>+ APPEND dead_letter_events (anexo · ADR-011)"]
 ```
 
 **Por qué dos árbitros:** recepción deduplica el *evento* (UNIQUE); procesamiento garantiza cuántas veces *actúo* sobre él (claim). Un evento único igual puede doble-procesarse bajo at-least-once sin el claim → ese es el rol de ADR-008.
@@ -151,7 +151,10 @@ flowchart TD
 - **Producer:** tras persistir el evento como `received` y devolver el 200, el service encola un job (pass-by-id, `jobId` para dedup de in-flight) **best-effort** — el ack al provider no espera al enqueue (200-post-save).
 - **Consumer:** el worker BullMQ toma el job y llama `processSingleEventById`. La cola es transporte; la corrección vive en el dominio (claim atómico).
 - **Recovery sweep:** `processPendingEvents` barre `processed_at IS NULL` y re-encola — cubre las dos clases que la cola sola no puede: mensajes que nunca se encolaron (enqueue falló) y fallos transitorios. El claim hace segura la carrera cola↔barrido.
-- **Retry/DLQ:** `attempts` + backoff exponencial viven en `defaultJobOptions` (propiedad del job, no por-caller). El "DLQ" por default es el failed set de BullMQ. Ver ADR-010.
+- **Retry/DLQ:** `attempts` + backoff exponencial viven en `defaultJobOptions` (propiedad del job, no por-caller). Ver ADR-010.
+- **Dead-letter (dos superficies, hoy):**
+  - **Dominio no-retriable** (`pending_manual_review`) → **anexo durable `dead_letter_events`** (ADR-011): tabla append-only que **apunta** al evento (FK, sin unique → N filas = audit trail) y agrega solo `reason` / `last_error` / `failed_at`. No copia el estado (`webhook_events.status` es la única fuente de verdad → drift imposible). El double-write (status + anexo) se resuelve por **orden** (append primero), no por transacción.
+  - **Retriable agotado** → por ahora cae en el **failed set de BullMQ** (Redis, volátil) — **todavía NO** aterriza en el anexo durable. Gap consciente (ver ADR-011, scope): la captura del agotamiento requiere un hook `@OnWorkerEvent('failed')`. Pendiente.
 
 ### Implemented endpoints (what's actually built)
 

@@ -10,6 +10,7 @@ import {
 } from './webhook.constants';
 import { getQueueToken } from '@nestjs/bullmq';
 import { EventNotFoundError } from './webhook.exception';
+import { DeadLetterRepository } from './dead-letter.repository';
 
 const webhookRepository = {
   setEventForManualReview: jest.fn(),
@@ -18,6 +19,10 @@ const webhookRepository = {
   findUnprocessedEvents: jest.fn(),
   fetchEventById: jest.fn(),
   create: jest.fn(),
+};
+
+const deadLetterRepository = {
+  append: jest.fn(),
 };
 
 const providerInstance = {
@@ -49,7 +54,6 @@ const buildEvent = (overrides: Partial<WebhookEvent> = {}): WebhookEvent =>
     receivedAt: new Date().toISOString(),
     processedAt: null,
     transactionId: null,
-    reason: null,
     ...overrides,
   }) as WebhookEvent;
 
@@ -59,6 +63,7 @@ describe('WebhookService', () => {
       providers: [
         WebhookService,
         { provide: WebhookRepository, useValue: webhookRepository },
+        { provide: DeadLetterRepository, useValue: deadLetterRepository },
         { provide: ProvidersService, useValue: providersService },
         {
           provide: getQueueToken(WEBHOOKS_QUEUE_NAME),
@@ -87,9 +92,18 @@ describe('WebhookService', () => {
         });
         await service.processSingleEvent(event);
         expect(webhookRepository.markEventAsProcessed).not.toHaveBeenCalled();
+        expect(deadLetterRepository.append).toHaveBeenCalledWith({
+          eventId: event.id,
+          reason: PendingManualReviewReason.UNSUPPORTED_CURRENCY,
+          lastError: expect.any(String),
+        });
         expect(webhookRepository.setEventForManualReview).toHaveBeenCalledWith(
           event.id,
-          PendingManualReviewReason.UNSUPPORTED_CURRENCY,
+        );
+        expect(
+          deadLetterRepository.append.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+          webhookRepository.setEventForManualReview.mock.invocationCallOrder[0],
         );
       });
     });
@@ -106,7 +120,6 @@ describe('WebhookService', () => {
         expect(webhookRepository.markEventAsProcessed).not.toHaveBeenCalled();
         expect(webhookRepository.setEventForManualReview).toHaveBeenCalledWith(
           event.id,
-          PendingManualReviewReason.UNSUPPORTED_EVENT_TYPE,
         );
       });
     });

@@ -7,6 +7,7 @@ import { providersTable } from '@/modules/providers/provider.schema';
 import { webhooksTable } from '@/modules/webhooks/webhook.schema';
 import { eq } from 'drizzle-orm';
 import { transactionsTable } from '@/modules/transactions/transaction.schema';
+import { deadLetterEventsTable } from '@/modules/webhooks/dead-letter.schema';
 
 describe('Webhooks (e2e)', () => {
   let app: INestApplication;
@@ -24,6 +25,7 @@ describe('Webhooks (e2e)', () => {
   });
 
   beforeEach(async () => {
+    await db.delete(deadLetterEventsTable);
     await db.delete(webhooksTable);
     await db.delete(transactionsTable);
     await db.delete(providersTable);
@@ -52,7 +54,6 @@ describe('Webhooks (e2e)', () => {
       .expect(201);
   });
 
-  // EL test del día: idempotencia real contra el UNIQUE constraint.
   it('mismo webhook 2 veces → se persiste 1 sola vez (200 en el 2do)', async () => {
     const evt = stripeEvent();
 
@@ -65,7 +66,6 @@ describe('Webhooks (e2e)', () => {
       .send(evt)
       .expect(200);
 
-    // LA aserción que cuenta la verdad: no "no explotó", sino UN solo row.
     const rows = await db
       .select()
       .from(webhooksTable)

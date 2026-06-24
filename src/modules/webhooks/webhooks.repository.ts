@@ -208,15 +208,11 @@ export class WebhookRepository {
     }
   }
 
-  async setEventForManualReview(
-    eventId: string,
-    reason: string,
-  ): Promise<void> {
+  async setEventForManualReview(eventId: string): Promise<void> {
     await this.db
       .update(webhooksTable)
       .set({
         status: 'pending_manual_review',
-        reason,
       })
       .where(eq(webhooksTable.id, eventId));
   }

@@ -31,7 +31,8 @@ export const webhooksTable = pgTable(
     receivedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     processedAt: timestamp({ withTimezone: true }),
     transactionId: uuid().references(() => transactionsTable.id),
-    reason: varchar({ length: 30 }),
+    // ADR-011: `reason` se movió a dead_letter_events (el anexo apunta, no copia).
+    // webhook_events conserva SOLO el estado (status) como fuente de verdad.
   },
   (table) => [
     unique('webhook_events_provider_event_uk').on(

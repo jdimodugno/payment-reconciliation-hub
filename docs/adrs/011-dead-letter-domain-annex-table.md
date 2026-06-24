@@ -1,7 +1,7 @@
 # 011 — Dead-Letter as Domain Annex Table
 
-**Status:** Proposed (design-first)
-**Date:** 2026-06-23
+**Status:** Accepted
+**Date:** 2026-06-23 (Proposed, design-first) → 2026-06-24 (Accepted, implemented)
 **Authors:** Juan Di Modugno
 **Tags:** domain, reliability, dead-letter, observability, mvp
 
@@ -66,6 +66,25 @@ Reparto:
 | Durabilidad | ✅ | ❌ | ✅ |
 | Drift / dual-write | n/a | n/a | ✅ evitado (anexo apunta) |
 | Audit trail de reintentos | ❌ | ❌ | ✅ (N:1) |
+
+## Implementation note (2026-06-24) — double-write resuelto por orden, no por atomicidad
+
+`transitionToManualReview` hace **dos** escrituras a la misma Postgres pero a dos repos
+distintos: UPDATE de `webhook_events.status` + INSERT al anexo. Atomizar eso cruzando
+repos cuesta (pasar un `tx` como parámetro, o colocar ambas escrituras juntas, o —peor—
+retornar un `tx` abierto de un método = lifecycle hazard).
+
+Decisión: **no se atomiza.** Análisis de fallas parciales:
+- **(a)** status seteado, append falla → evento muerto **sin registro de muerte** (GRAVE).
+- **(b)** append commitea, status falla → fila en el anexo apuntando a un evento todavía
+  `received` → el recovery-sweep lo re-procesa (TOLERABLE, se auto-sana; la fila extra
+  encaja con el modelo append-only N:1, no es bug).
+
+Escribiendo **el append PRIMERO y el status después**, el caso (a) se vuelve
+**inalcanzable por construcción** y solo queda el (b), tolerable. Mismo principio de
+ordenamiento que el inbox/outbox (200-post-save): ordenar para que la inconsistencia
+sobreviviente sea la inofensiva, en vez de pagar atomicidad. El orden está **protegido
+por un test** de `invocationCallOrder` (validado por mutación).
 
 ## Consequences
 
