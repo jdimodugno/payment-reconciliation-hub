@@ -7,10 +7,8 @@ import { providersTable } from '@/modules/providers/provider.schema';
 import { webhooksTable } from '@/modules/webhooks/webhook.schema';
 import { transactionsTable } from '@/modules/transactions/transaction.schema';
 import { UnprocessedEvent } from '@/modules/webhooks/webhook.types';
+import { deadLetterEventsTable } from '@/modules/webhooks/dead-letter.schema';
 
-// GET /reconciliation-status — lente READ-ONLY sobre eventos no procesados.
-// Hoy NO afirma orfandad (no hay state-machine ni processing-window todavía):
-// solo lista processed_at IS NULL ordenados por received_at (aging visible).
 describe('Reconciliation status (e2e)', () => {
   let app: INestApplication;
   let db: DrizzleDB;
@@ -26,6 +24,7 @@ describe('Reconciliation status (e2e)', () => {
   });
 
   beforeEach(async () => {
+    await db.delete(deadLetterEventsTable);
     await db.delete(webhooksTable);
     await db.delete(transactionsTable);
     await db.delete(providersTable);
