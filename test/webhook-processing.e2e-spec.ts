@@ -8,11 +8,8 @@ import { transactionsTable } from '@/modules/transactions/transaction.schema';
 import { WebhookService } from '@/modules/webhooks/webhooks.service';
 import { eq } from 'drizzle-orm';
 import { WebhookEvent } from '@/modules/webhooks/webhook.types';
+import { deadLetterEventsTable } from '@/modules/webhooks/dead-letter.schema';
 
-// Procesamiento NO es HTTP. Dos formas de dispararlo contra DB real:
-//  - directo: service.processSingleEvent(row) → síncrono, aísla la unidad de procesamiento.
-//  - async real: service.createWebhookNotification(...) → persiste 'received' + encola;
-//    el worker registrado (BullMQ) consume y procesa en background (hay que ESPERARLO).
 describe('Webhook processing (e2e)', () => {
   let app: INestApplication;
   let db: DrizzleDB;
@@ -30,6 +27,7 @@ describe('Webhook processing (e2e)', () => {
   });
 
   beforeEach(async () => {
+    await db.delete(deadLetterEventsTable);
     await db.delete(webhooksTable);
     await db.delete(transactionsTable);
     await db.delete(providersTable);
@@ -44,7 +42,6 @@ describe('Webhook processing (e2e)', () => {
     await app.close();
   });
 
-  // Inserta un webhook 'received' listo para procesar. Ajustá el payload/estado por test.
   const seedReceivedWebhook = async (
     overrides: Record<string, unknown> = {},
   ) => {
@@ -72,9 +69,6 @@ describe('Webhook processing (e2e)', () => {
   const fetchWebhook = async (id: string) =>
     (await db.select().from(webhooksTable).where(eq(webhooksTable.id, id)))[0];
 
-  // Espera activa: re-evalúa `check` hasta que sea truthy o se agote el timeout.
-  // Necesario porque el worker procesa ASYNC: tras encolar, el efecto no es inmediato.
-  // Trade-off conocido (deuda Día 11): un timeout muy ajustado puede ponerse flaky.
   const waitFor = async (
     check: () => Promise<boolean>,
     { timeoutMs = 5000, intervalMs = 50 } = {},
@@ -88,7 +82,6 @@ describe('Webhook processing (e2e)', () => {
   };
 
   describe('idempotencia de procesamiento (el test del día)', () => {
-    // LA aserción que cuenta la verdad: procesar 2 veces, UNA sola Transaction.
     it('procesar el mismo evento 2 veces → count(transactions) === 1', async () => {
       const pre = await countTransactions();
       expect(pre).toBe(0);
