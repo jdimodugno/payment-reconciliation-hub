@@ -18,12 +18,14 @@ import {
   EventNotFoundError,
   UnableToEnqueueEventError,
 } from './webhook.exception';
+import { DeadLetterRepository } from './dead-letter.repository';
 
 @Injectable()
 export class WebhookService {
   constructor(
     private providerService: ProvidersService,
     private webhookRepository: WebhookRepository,
+    private deadLetterRepository: DeadLetterRepository,
     @InjectQueue(WEBHOOKS_QUEUE_NAME) private webhooksQueue: Queue,
   ) {}
 
@@ -179,8 +181,15 @@ export class WebhookService {
     reason: PendingManualReviewReason,
     context: Record<string, string | number>,
   ): Promise<void> {
-    await this.webhookRepository.setEventForManualReview(id, reason);
-    const messageToPrint = `Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
-    console.warn(messageToPrint);
+    const preMessageToPrint = `About to transition Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
+    console.warn(preMessageToPrint);
+    await this.deadLetterRepository.append({
+      eventId: id,
+      reason,
+      lastError: JSON.stringify(context),
+    });
+    await this.webhookRepository.setEventForManualReview(id);
+    const postMessageToPrint = `Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
+    console.warn(postMessageToPrint);
   }
 }
