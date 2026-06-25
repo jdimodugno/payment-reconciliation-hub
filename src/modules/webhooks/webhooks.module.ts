@@ -6,6 +6,7 @@ import { ProvidersModule } from '../providers/providers.module';
 import { BullModule } from '@nestjs/bullmq';
 import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
 import { WebhooksConsumer } from './webhooks.consumer';
+import { DeadLetterRepository } from './dead-letter.repository';
 
 /**
  * WebhooksModule
@@ -42,6 +43,11 @@ import { WebhooksConsumer } from './webhooks.consumer';
     }),
   ],
   controllers: [WebhookController],
-  providers: [WebhookService, WebhookRepository, WebhooksConsumer],
+  providers: [
+    WebhookService,
+    WebhookRepository,
+    WebhooksConsumer,
+    DeadLetterRepository,
+  ],
 })
 export class WebhooksModule {}

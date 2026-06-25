@@ -27,7 +27,6 @@ export type WebhookEvent = {
   receivedAt: string;
   processedAt: string | null;
   transactionId: string | null;
-  reason: string | null;
 };
 
 export type UnprocessedEventRow = {
