@@ -37,6 +37,6 @@ export class WebhookController {
   @Get('/reconciliation-status')
   @HttpCode(HttpStatus.OK)
   async getReconciliationStatus() {
-    return this.webhookService.findUnprocessedEvents();
+    return this.webhookService.getReconciliationStatus();
   }
 }

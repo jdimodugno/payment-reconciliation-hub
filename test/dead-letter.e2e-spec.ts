@@ -98,4 +98,14 @@ describe('Dead-letter annex (e2e)', () => {
     expect(rows[0].failedAt).not.toBeUndefined();
     expect('status' in rows[0]).toBe(false);
   });
+
+  // DEFERRED (Día 19, cabo #1 DLQ): el camino retriable-AGOTADO debe persistir al anexo
+  // durable, pero hoy muere en el failed-set de BullMQ (volátil). Mecanismo pendiente:
+  // hook @OnWorkerEvent('failed') con guarda attemptsMade >= attempts + sweep de
+  // reconciliación (failed-en-BullMQ-sin-fila-en-anexo → repara). Diferido del MVP porque
+  // el append idempotente choca con el diseño append-only multi-fila (audit trail) y
+  // amerita diseño planificado. Ver README "Dead-letter" + ADR-011.
+  it.todo(
+    'appends a dead-letter row when a retriable job exhausts its attempts',
+  );
 });

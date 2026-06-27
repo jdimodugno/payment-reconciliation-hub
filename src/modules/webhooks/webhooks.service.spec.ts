@@ -2,7 +2,12 @@ import { Test } from '@nestjs/testing';
 import { WebhookService } from './webhooks.service';
 import { WebhookRepository } from './webhooks.repository';
 import { ProvidersService } from '../providers/providers.service';
-import { PendingManualReviewReason, WebhookEvent } from './webhook.types';
+import {
+  ErrorReconciliationStatus,
+  PendingManualReviewReason,
+  SuccessfulReconciliationStatus,
+  WebhookEvent,
+} from './webhook.types';
 import z from 'zod';
 import {
   WEBHOOKS_PROCESSOR_JOB_NAME,
@@ -19,10 +24,12 @@ const webhookRepository = {
   findUnprocessedEvents: jest.fn(),
   fetchEventById: jest.fn(),
   create: jest.fn(),
+  getEventsInTerminalStatusCountByGroup: jest.fn(),
 };
 
 const deadLetterRepository = {
   append: jest.fn(),
+  getDistinctEventIdCount: jest.fn(),
 };
 
 const providerInstance = {
@@ -118,8 +125,18 @@ describe('WebhookService', () => {
         });
         await service.processSingleEvent(event);
         expect(webhookRepository.markEventAsProcessed).not.toHaveBeenCalled();
+        expect(deadLetterRepository.append).toHaveBeenCalledWith({
+          eventId: event.id,
+          reason: PendingManualReviewReason.UNSUPPORTED_EVENT_TYPE,
+          lastError: expect.any(String),
+        });
         expect(webhookRepository.setEventForManualReview).toHaveBeenCalledWith(
           event.id,
+        );
+        expect(
+          deadLetterRepository.append.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+          webhookRepository.setEventForManualReview.mock.invocationCallOrder[0],
         );
       });
     });
@@ -148,7 +165,7 @@ describe('WebhookService', () => {
     });
   });
 
-  describe('WebhookService.findUnprocessedEvents', () => {
+  describe('WebhookService.getReconciliationStatus', () => {
     const NOW = new Date('2026-06-11T00:00:00.000Z').getTime();
     const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -169,33 +186,90 @@ describe('WebhookService', () => {
       jest.clearAllMocks();
     });
 
-    it('deriva ageInDays correcto y receivedAt como ISO string', async () => {
+    it('deriva ageInDays correcto, receivedAt como ISO string, total como suma de subgrupos', async () => {
       webhookRepository.findUnprocessedEvents.mockResolvedValue([
         rowReceivedDaysAgo('evt-10d', 10),
         rowReceivedDaysAgo('evt-3d', 3),
         rowReceivedDaysAgo('evt-0d', 0),
       ]);
 
-      const result = await service.findUnprocessedEvents();
+      webhookRepository.getEventsInTerminalStatusCountByGroup.mockResolvedValue(
+        { processed: 1, pendingManualReview: 2 },
+      );
 
-      expect(result[0].ageInDays).toBe(10);
-      expect(z.iso.datetime().safeParse(result[0].receivedAt).success).toBe(
+      deadLetterRepository.getDistinctEventIdCount.mockResolvedValue(1);
+
+      const rawResult = await service.getReconciliationStatus();
+
+      if (Object.hasOwn(rawResult, 'error')) throw new Error('expected error');
+
+      const castedResult = rawResult as SuccessfulReconciliationStatus;
+
+      const events = castedResult.unprocessedEvents;
+
+      expect(events[0].ageInDays).toBe(10);
+      expect(z.iso.datetime().safeParse(events[0].receivedAt).success).toBe(
         true,
       );
-      expect(result[1].ageInDays).toBe(3);
-      expect(z.iso.datetime().safeParse(result[1].receivedAt).success).toBe(
+      expect(events[1].ageInDays).toBe(3);
+      expect(z.iso.datetime().safeParse(events[1].receivedAt).success).toBe(
         true,
       );
-      expect(result[2].ageInDays).toBe(0);
-      expect(z.iso.datetime().safeParse(result[2].receivedAt).success).toBe(
+      expect(events[2].ageInDays).toBe(0);
+      expect(z.iso.datetime().safeParse(events[2].receivedAt).success).toBe(
         true,
       );
+
+      expect(castedResult.eventsByStatus.processed).not.toBeUndefined();
+      expect(
+        castedResult.eventsByStatus.pendingManualReview,
+      ).not.toBeUndefined();
+      expect(castedResult.eventsByStatus.pendingManualReview).toBe(2);
+      expect(castedResult.eventsByStatus.processed).toBe(1);
+      expect(castedResult.deadLetteredEvents).toBe(1);
+      expect(castedResult.total).toBe(3);
     });
 
     it('repo vacío → []', async () => {
       webhookRepository.findUnprocessedEvents.mockResolvedValue([]);
-      const result = await service.findUnprocessedEvents();
-      expect(result.length).toBe(0);
+      const rawResult = await service.getReconciliationStatus();
+      if (Object.hasOwn(rawResult, 'error'))
+        throw new Error('unexpected error');
+      const castedResult = rawResult as SuccessfulReconciliationStatus;
+
+      expect(castedResult.unprocessedEvents.length).toBe(0);
+    });
+
+    it('error retrieving reconciliation status - error retrieving events grouped by status', async () => {
+      webhookRepository.getEventsInTerminalStatusCountByGroup.mockResolvedValue(
+        null,
+      );
+
+      const rawResult = await service.getReconciliationStatus();
+
+      if (!Object.hasOwn(rawResult, 'error')) throw new Error('expected error');
+      const castedResult = rawResult as ErrorReconciliationStatus;
+
+      expect(castedResult.error).toBe(
+        'An error occurred while obtaining reconciliation status',
+      );
+    });
+
+    it('error retrieving reconciliation status - error retrieving dead lettered', async () => {
+      webhookRepository.getEventsInTerminalStatusCountByGroup.mockResolvedValue(
+        { processed: 1, pendingManualReview: 2 },
+      );
+
+      deadLetterRepository.getDistinctEventIdCount.mockResolvedValue(null);
+
+      const rawResult = await service.getReconciliationStatus();
+
+      if (!Object.hasOwn(rawResult, 'error')) throw new Error('expected error');
+      const castedResult = rawResult as ErrorReconciliationStatus;
+
+      expect(castedResult.error).toBe(
+        'An error occurred while obtaining reconciliation status',
+      );
     });
   });
 

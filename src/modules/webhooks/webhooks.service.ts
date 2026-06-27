@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { WebhookRepository } from './webhooks.repository';
 import {
   PendingManualReviewReason,
-  UnprocessedEvent,
+  ReconciliationStatus,
   WebhookEvent,
 } from './webhook.types';
 import { ProvidersService } from '../providers/providers.service';
@@ -158,22 +158,38 @@ export class WebhookService {
     );
   }
 
-  async findUnprocessedEvents(): Promise<UnprocessedEvent[]> {
+  async getReconciliationStatus(): Promise<ReconciliationStatus> {
     const events = await this.webhookRepository.findUnprocessedEvents();
+    const countByStatus =
+      await this.webhookRepository.getEventsInTerminalStatusCountByGroup();
+
+    const deadLetteredEvents =
+      await this.deadLetterRepository.getDistinctEventIdCount();
 
     const now = Date.now();
 
-    return events.map((evt) => {
-      const ageInDays = Math.floor(
-        (now - evt.receivedAt.getTime()) / (1000 * 60 * 60 * 24),
-      );
-
+    if (deadLetteredEvents === null || countByStatus === null) {
       return {
-        ...evt,
-        receivedAt: evt.receivedAt.toISOString(),
-        ageInDays,
+        error: 'An error occurred while obtaining reconciliation status',
       };
-    });
+    }
+
+    return {
+      deadLetteredEvents,
+      eventsByStatus: countByStatus,
+      unprocessedEvents: events.map((evt) => {
+        const ageInDays = Math.floor(
+          (now - evt.receivedAt.getTime()) / (1000 * 60 * 60 * 24),
+        );
+
+        return {
+          ...evt,
+          receivedAt: evt.receivedAt.toISOString(),
+          ageInDays,
+        };
+      }),
+      total: countByStatus.pendingManualReview + countByStatus.processed,
+    };
   }
 
   private async transitionToManualReview(

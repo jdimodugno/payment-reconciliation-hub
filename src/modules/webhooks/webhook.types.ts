@@ -38,3 +38,16 @@ export type UnprocessedEvent = Omit<UnprocessedEventRow, 'receivedAt'> & {
   receivedAt: string;
   ageInDays: number;
 };
+
+export type SuccessfulReconciliationStatus = {
+  unprocessedEvents: UnprocessedEvent[];
+  deadLetteredEvents: number;
+  eventsByStatus: { processed: number; pendingManualReview: number };
+  total: number;
+};
+
+export type ErrorReconciliationStatus = { error: string };
+
+export type ReconciliationStatus =
+  | SuccessfulReconciliationStatus
+  | ErrorReconciliationStatus;
