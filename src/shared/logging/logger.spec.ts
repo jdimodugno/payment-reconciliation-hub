@@ -7,6 +7,7 @@ import { LogSerializer } from './log-serializer.interface';
 // se emite), no que escriba en ningún lado. La emisión real de JSON es asunto
 // de pino, no de este wrapper. Acá probamos el CONTRATO de proyección.
 const pino = {
+  info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
 };
@@ -46,27 +47,34 @@ describe('Logger (allowlist fail-closed)', () => {
     jest.clearAllMocks();
   });
 
-  // EL test que protege el diseño: aunque la entidad TRAIGA un campo sensible,
-  // si no está en el allowlist no puede llegar al log. Si alguien mete `secret`
-  // al allowlist por error, este test se pone rojo y lo frena.
-  it('no emite campos fuera del allowlist, aunque la entidad los traiga', () => {
-    logger.warn(buildEntity(), fakeSerializer, 'evento de prueba');
+  it('info - no emite campos fuera del allowlist, aunque la entidad los traiga', () => {
+    logger.info(buildEntity(), fakeSerializer, 'evento de prueba');
 
-    // primer arg = el objeto de campos; segundo arg = el mensaje
-    const [emittedFields, msg] = pino.warn.mock.calls[0];
+    const [emittedFields, msg] = pino.info.mock.calls[0];
 
-    expect(emittedFields).not.toHaveProperty('secret'); // ← la garantía fail-closed
+    expect(emittedFields).not.toHaveProperty('secret');
     expect(emittedFields).toMatchObject({
-      entityName: 'FakeEntity', // metadata de sistema, siempre presente
+      entityName: 'FakeEntity',
       id: 'entity-1',
       safe: 'ok-to-log',
     });
     expect(msg).toBe('evento de prueba');
   });
 
-  // El `err` es contexto del fallo, vive FUERA del allowlist: se compone en el
-  // call-site (clave `err`, que pino serializa especial) y solo aparece si se
-  // pasó. Confirma que la frontera sistema-vs-dominio se respeta.
+  it('warn - no emite campos fuera del allowlist, aunque la entidad los traiga', () => {
+    logger.warn(buildEntity(), fakeSerializer, 'evento de prueba');
+
+    const [emittedFields, msg] = pino.warn.mock.calls[0];
+
+    expect(emittedFields).not.toHaveProperty('secret');
+    expect(emittedFields).toMatchObject({
+      entityName: 'FakeEntity',
+      id: 'entity-1',
+      safe: 'ok-to-log',
+    });
+    expect(msg).toBe('evento de prueba');
+  });
+
   it('incluye `err` solo cuando se lo pasa', () => {
     const boom = new Error('boom');
 

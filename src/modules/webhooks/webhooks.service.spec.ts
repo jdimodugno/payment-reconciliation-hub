@@ -19,6 +19,7 @@ import { DeadLetterRepository } from './dead-letter.repository';
 import { StructuredLogger } from '@/shared/logging/logger';
 
 const logger = {
+  info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
 };
@@ -415,10 +416,7 @@ describe('WebhookService', () => {
       expect(webhooksQueue.add).toHaveBeenCalledTimes(3);
     });
 
-    it('un enqueue que falla se loguea a nivel error con el id del evento', async () => {
-      const errorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
+    it('un enqueue que falla se loguea a nivel warn con el id del evento', async () => {
       const pending = [buildEvent({ id: 'evt-fails' })];
       webhookRepository.getPendingWebhookEvents.mockResolvedValue({
         status: 'found',
@@ -427,12 +425,13 @@ describe('WebhookService', () => {
       webhooksQueue.add.mockRejectedValueOnce(new Error('redis down'));
 
       await service.processPendingEvents();
-      expect(errorSpy).toHaveBeenCalledWith(
+
+      expect(logger.warn.mock.calls[0][0]).toMatchObject(
         expect.objectContaining({
-          message: expect.stringContaining('evt-fails'),
+          id: 'evt-fails',
         }),
       );
-      errorSpy.mockRestore();
+      expect(logger.warn).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -22,6 +22,14 @@ export class StructuredLogger {
     }, dict);
   }
 
+  info<T extends Record<string, unknown>>(
+    entity: T,
+    serializer: LogSerializer<T>,
+    msg: string,
+  ): void {
+    this.pino.info({ ...this.getLoggableFields(entity, serializer) }, msg);
+  }
+
   error<T extends Record<string, unknown>>(
     entity: T,
     serializer: LogSerializer<T>,

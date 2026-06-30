@@ -1,3 +1,4 @@
+import { LogSerializer } from '@/shared/logging/log-serializer.interface';
 import { webhookEventStatusEnum } from './webhook.schema';
 
 export enum PendingManualReviewReason {
@@ -51,3 +52,8 @@ export type ErrorReconciliationStatus = { error: string };
 export type ReconciliationStatus =
   | SuccessfulReconciliationStatus
   | ErrorReconciliationStatus;
+
+export const WebhookEventSerializer: LogSerializer<WebhookEvent> = {
+  name: 'WebhookEvent',
+  allowlist: ['id', 'providerId', 'externalEventId', 'status', 'transactionId'],
+};

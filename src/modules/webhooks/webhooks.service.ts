@@ -4,6 +4,7 @@ import {
   PendingManualReviewReason,
   ReconciliationStatus,
   WebhookEvent,
+  WebhookEventSerializer,
 } from './webhook.types';
 import { ProvidersService } from '../providers/providers.service';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
@@ -14,10 +15,7 @@ import { mapEventToTransaction } from './mapper/event-transaction.mapper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
 import { Job, Queue } from 'bullmq';
-import {
-  EventNotFoundError,
-  UnableToEnqueueEventError,
-} from './webhook.exception';
+import { EventNotFoundError } from './webhook.exception';
 import { DeadLetterRepository } from './dead-letter.repository';
 import {
   DeadLetterEventData,
@@ -53,11 +51,11 @@ export class WebhookService {
     const persistedEvent = await this.webhookRepository.create(notification);
 
     this.enqueueEvent(persistedEvent.event).catch((error) => {
-      console.warn(
-        new UnableToEnqueueEventError(
-          persistedEvent.event.id,
-          error as unknown as Error,
-        ),
+      this.logger.warn(
+        persistedEvent.event,
+        WebhookEventSerializer,
+        'Unable to enqueue for processing',
+        error,
       );
     });
 
@@ -69,21 +67,17 @@ export class WebhookService {
       await this.webhookRepository.getPendingWebhookEvents();
 
     if (pendingEventsResult.status === 'none') {
-      console.log(
-        `There were no pending events found for processing - ${new Date().toISOString()}`,
-      );
-
       return;
     }
-    console.log(
-      `There are ${pendingEventsResult.elements.length} events to process`,
-    );
 
     await Promise.all(
       pendingEventsResult.elements.map((evt) =>
         this.enqueueEvent(evt).catch((error) => {
-          console.error(
-            new UnableToEnqueueEventError(evt.id, error as unknown as Error),
+          this.logger.warn(
+            evt,
+            WebhookEventSerializer,
+            'Unable to enqueue for processing',
+            error,
           );
         }),
       ),
@@ -158,9 +152,21 @@ export class WebhookService {
       rawTxData,
     );
 
-    console.log(
-      `Event ${singleEvent.id} ended with status: ${processResult.status}`,
-    );
+    let messageToLog: string;
+
+    switch (processResult.status) {
+      case 'failed':
+        messageToLog = 'Event processing failed';
+        break;
+      case 'already_processed':
+        messageToLog = 'Event was already processed';
+        break;
+      case 'processed':
+        messageToLog = 'Event was processed';
+        break;
+    }
+
+    this.logger.info(singleEvent, WebhookEventSerializer, messageToLog);
   }
 
   async getReconciliationStatus(): Promise<ReconciliationStatus> {

@@ -25,7 +25,19 @@ import { LoggerModule } from 'nestjs-pino';
       }),
       inject: [ConfigService],
     }),
-    LoggerModule.forRoot({}),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+        transport:
+          process.env.NODE_ENV !== 'production'
+            ? { target: 'pino-pretty' }
+            : undefined,
+        redact: {
+          paths: ['req.headers.authorization', 'req.headers.cookie'],
+          censor: 'Redacted',
+        },
+      },
+    }),
     TransactionsModule,
     ProvidersModule,
     WebhooksModule,
