@@ -7,6 +7,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { HealthModule } from './modules/health/health.module';
 import { BullModule } from '@nestjs/bullmq';
+import { LoggerModule } from 'nestjs-pino';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { BullModule } from '@nestjs/bullmq';
       }),
       inject: [ConfigService],
     }),
+    LoggerModule.forRoot({}),
     TransactionsModule,
     ProvidersModule,
     WebhooksModule,

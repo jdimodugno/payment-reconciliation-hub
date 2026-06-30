@@ -19,13 +19,18 @@ import {
   UnableToEnqueueEventError,
 } from './webhook.exception';
 import { DeadLetterRepository } from './dead-letter.repository';
-
+import {
+  DeadLetterEventData,
+  deadLetterEventSerializer,
+} from './dead-letter.types';
+import { StructuredLogger } from '@/shared/logging/logger';
 @Injectable()
 export class WebhookService {
   constructor(
     private providerService: ProvidersService,
     private webhookRepository: WebhookRepository,
     private deadLetterRepository: DeadLetterRepository,
+    private logger: StructuredLogger,
     @InjectQueue(WEBHOOKS_QUEUE_NAME) private webhooksQueue: Queue,
   ) {}
 
@@ -197,15 +202,22 @@ export class WebhookService {
     reason: PendingManualReviewReason,
     context: Record<string, string | number>,
   ): Promise<void> {
-    const preMessageToPrint = `About to transition Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
-    console.warn(preMessageToPrint);
-    await this.deadLetterRepository.append({
+    const deadLetterData: DeadLetterEventData = {
       eventId: id,
       reason,
       lastError: JSON.stringify(context),
-    });
+    };
+    this.logger.warn(
+      deadLetterData,
+      deadLetterEventSerializer,
+      'about to transition event to manual review',
+    );
+    await this.deadLetterRepository.append(deadLetterData);
     await this.webhookRepository.setEventForManualReview(id);
-    const postMessageToPrint = `Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
-    console.warn(postMessageToPrint);
+    this.logger.warn(
+      deadLetterData,
+      deadLetterEventSerializer,
+      'event transitioned to manual review',
+    );
   }
 }

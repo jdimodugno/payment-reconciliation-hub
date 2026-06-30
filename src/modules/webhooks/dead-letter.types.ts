@@ -1,3 +1,5 @@
+import { LogSerializer } from '@/shared/logging/log-serializer.interface';
+
 export type DeadLetterEventData = {
   eventId: string;
   reason: string;
@@ -9,10 +11,7 @@ export type DeadLetterEvent = DeadLetterEventData & {
   failedAt: string;
 };
 
-// id: uuid().primaryKey().defaultRandom().notNull(),
-// eventId: uuid()
-//   .references(() => webhooksTable.id)
-//   .notNull(),
-// reason: varchar({ length: 30 }).notNull(),
-// lastError: text(),
-// failedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+export const deadLetterEventSerializer: LogSerializer<DeadLetterEventData> = {
+  name: 'DeadLetterEvent',
+  allowlist: ['eventId', 'reason'],
+};

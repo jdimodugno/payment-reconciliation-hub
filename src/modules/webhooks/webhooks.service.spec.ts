@@ -16,6 +16,12 @@ import {
 import { getQueueToken } from '@nestjs/bullmq';
 import { EventNotFoundError } from './webhook.exception';
 import { DeadLetterRepository } from './dead-letter.repository';
+import { StructuredLogger } from '@/shared/logging/logger';
+
+const logger = {
+  warn: jest.fn(),
+  error: jest.fn(),
+};
 
 const webhookRepository = {
   setEventForManualReview: jest.fn(),
@@ -68,6 +74,7 @@ describe('WebhookService', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
+        { provide: StructuredLogger, useValue: logger },
         WebhookService,
         { provide: WebhookRepository, useValue: webhookRepository },
         { provide: DeadLetterRepository, useValue: deadLetterRepository },
