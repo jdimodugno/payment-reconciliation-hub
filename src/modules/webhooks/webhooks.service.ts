@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { WebhookRepository } from './webhooks.repository';
 import {
   PendingManualReviewReason,
-  UnprocessedEvent,
+  ReconciliationStatus,
   WebhookEvent,
+  WebhookEventSerializer,
 } from './webhook.types';
 import { ProvidersService } from '../providers/providers.service';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
@@ -14,18 +15,20 @@ import { mapEventToTransaction } from './mapper/event-transaction.mapper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
 import { Job, Queue } from 'bullmq';
-import {
-  EventNotFoundError,
-  UnableToEnqueueEventError,
-} from './webhook.exception';
+import { EventNotFoundError } from './webhook.exception';
 import { DeadLetterRepository } from './dead-letter.repository';
-
+import {
+  DeadLetterEventData,
+  deadLetterEventSerializer,
+} from './dead-letter.types';
+import { StructuredLogger } from '@/shared/logging/logger';
 @Injectable()
 export class WebhookService {
   constructor(
     private providerService: ProvidersService,
     private webhookRepository: WebhookRepository,
     private deadLetterRepository: DeadLetterRepository,
+    private logger: StructuredLogger,
     @InjectQueue(WEBHOOKS_QUEUE_NAME) private webhooksQueue: Queue,
   ) {}
 
@@ -48,11 +51,11 @@ export class WebhookService {
     const persistedEvent = await this.webhookRepository.create(notification);
 
     this.enqueueEvent(persistedEvent.event).catch((error) => {
-      console.warn(
-        new UnableToEnqueueEventError(
-          persistedEvent.event.id,
-          error as unknown as Error,
-        ),
+      this.logger.warn(
+        persistedEvent.event,
+        WebhookEventSerializer,
+        'Unable to enqueue for processing',
+        error,
       );
     });
 
@@ -64,21 +67,17 @@ export class WebhookService {
       await this.webhookRepository.getPendingWebhookEvents();
 
     if (pendingEventsResult.status === 'none') {
-      console.log(
-        `There were no pending events found for processing - ${new Date().toISOString()}`,
-      );
-
       return;
     }
-    console.log(
-      `There are ${pendingEventsResult.elements.length} events to process`,
-    );
 
     await Promise.all(
       pendingEventsResult.elements.map((evt) =>
         this.enqueueEvent(evt).catch((error) => {
-          console.error(
-            new UnableToEnqueueEventError(evt.id, error as unknown as Error),
+          this.logger.warn(
+            evt,
+            WebhookEventSerializer,
+            'Unable to enqueue for processing',
+            error,
           );
         }),
       ),
@@ -153,27 +152,55 @@ export class WebhookService {
       rawTxData,
     );
 
-    console.log(
-      `Event ${singleEvent.id} ended with status: ${processResult.status}`,
-    );
+    let messageToLog: string;
+
+    switch (processResult.status) {
+      case 'failed':
+        messageToLog = 'Event processing failed';
+        break;
+      case 'already_processed':
+        messageToLog = 'Event was already processed';
+        break;
+      case 'processed':
+        messageToLog = 'Event was processed';
+        break;
+    }
+
+    this.logger.info(singleEvent, WebhookEventSerializer, messageToLog);
   }
 
-  async findUnprocessedEvents(): Promise<UnprocessedEvent[]> {
+  async getReconciliationStatus(): Promise<ReconciliationStatus> {
     const events = await this.webhookRepository.findUnprocessedEvents();
+    const countByStatus =
+      await this.webhookRepository.getEventsInTerminalStatusCountByGroup();
+
+    const deadLetteredEvents =
+      await this.deadLetterRepository.getDistinctEventIdCount();
 
     const now = Date.now();
 
-    return events.map((evt) => {
-      const ageInDays = Math.floor(
-        (now - evt.receivedAt.getTime()) / (1000 * 60 * 60 * 24),
-      );
-
+    if (deadLetteredEvents === null || countByStatus === null) {
       return {
-        ...evt,
-        receivedAt: evt.receivedAt.toISOString(),
-        ageInDays,
+        error: 'An error occurred while obtaining reconciliation status',
       };
-    });
+    }
+
+    return {
+      deadLetteredEvents,
+      eventsByStatus: countByStatus,
+      unprocessedEvents: events.map((evt) => {
+        const ageInDays = Math.floor(
+          (now - evt.receivedAt.getTime()) / (1000 * 60 * 60 * 24),
+        );
+
+        return {
+          ...evt,
+          receivedAt: evt.receivedAt.toISOString(),
+          ageInDays,
+        };
+      }),
+      total: countByStatus.pendingManualReview + countByStatus.processed,
+    };
   }
 
   private async transitionToManualReview(
@@ -181,15 +208,22 @@ export class WebhookService {
     reason: PendingManualReviewReason,
     context: Record<string, string | number>,
   ): Promise<void> {
-    const preMessageToPrint = `About to transition Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
-    console.warn(preMessageToPrint);
-    await this.deadLetterRepository.append({
+    const deadLetterData: DeadLetterEventData = {
       eventId: id,
       reason,
       lastError: JSON.stringify(context),
-    });
+    };
+    this.logger.warn(
+      deadLetterData,
+      deadLetterEventSerializer,
+      'about to transition event to manual review',
+    );
+    await this.deadLetterRepository.append(deadLetterData);
     await this.webhookRepository.setEventForManualReview(id);
-    const postMessageToPrint = `Event ${id} ended with status: pending_manual_review. Reason: ${reason}. Trigger: ${JSON.stringify(context)}`;
-    console.warn(postMessageToPrint);
+    this.logger.warn(
+      deadLetterData,
+      deadLetterEventSerializer,
+      'event transitioned to manual review',
+    );
   }
 }

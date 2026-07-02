@@ -35,6 +35,7 @@
     "bullmq": "^5.0.0",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.2",
+    "nestjs-pino": "^4.6.1",
     "pg": "^8.21.0",
     "pino": "^8.16.0",
     "pino-pretty": "^10.2.0",
