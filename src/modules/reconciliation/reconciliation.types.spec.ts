@@ -1,0 +1,104 @@
+import { Money } from '@/shared/money/money';
+import { Currencies } from '@/shared/money/currency';
+import {
+  AmountMismatch,
+  StateMismatch,
+  MissingInternal,
+  MissingProvider,
+  Discrepancy,
+} from './reconciliation.types';
+
+/**
+ * Spec del MODELO (no de comportamiento de negocio). Prueba 3 cosas:
+ *  1) Positivo: cada variante válida se puede construir (compila).
+ *  2) Negativo: los estados ilegales NO compilan (el @ts-expect-error lo garantiza).
+ *  3) Runtime: el narrowing por `kind` funciona y el switch es exhaustivo.
+ *
+ * Nota: los negativos están escritos de forma ROBUSTA AL FORMATTER — el error de tipo
+ * cae siempre en la línea que lleva la directiva, sin depender de que algo quede en 1 línea.
+ */
+
+// ─── 1. POSITIVO: fixtures válidas (si compilan, lo legal es representable) ───
+const amount: AmountMismatch = {
+  kind: 'amount_mismatch',
+  internalId: 'tx_1',
+  providerRef: 'evt_1',
+  internalAmount: Money.fromMinorUnits(2000, Currencies.USD),
+  providerAmount: Money.fromMinorUnits(20000, Currencies.USD),
+  detectedAt: '2026-07-02T00:00:00.000Z',
+};
+
+const state: StateMismatch = {
+  kind: 'state_mismatch',
+  internalId: 'tx_2',
+  providerRef: 'evt_2',
+  internalStatus: 'succeeded',
+  providerStatus: 'cancelled',
+  detectedAt: '2026-07-02T00:00:00.000Z',
+};
+
+const missingInternal: MissingInternal = {
+  kind: 'missing_internal',
+  providerRef: 'evt_3',
+  detectedAt: '2026-07-02T00:00:00.000Z',
+};
+
+const missingProvider: MissingProvider = {
+  kind: 'missing_provider',
+  internalId: 'tx_4',
+  detectedAt: '2026-07-02T00:00:00.000Z',
+};
+
+// ─── 2. NEGATIVO: cada línea marcada DEBE dar error de tipo ───
+
+// (a) Asimetría: la variante NO expone el campo del otro lado. Lo probamos LEYÉNDOLO
+//     (línea corta, robusta al formatter; el error cae justo acá).
+// @ts-expect-error missing_internal no expone internalId (existe solo en el provider)
+void missingInternal.internalId;
+// @ts-expect-error missing_provider no expone providerRef (existe solo en interno)
+void missingProvider.providerRef;
+
+// (b) Campo obligatorio faltante: el error cae en la línea de apertura del literal,
+//     aunque el formatter lo parta en varias líneas.
+const check = <T>(_x: T): void => {};
+// @ts-expect-error amount_mismatch requiere providerAmount
+check<AmountMismatch>({
+  kind: 'amount_mismatch',
+  internalId: 'i',
+  providerRef: 'e',
+  detectedAt: 'd',
+  internalAmount: Money.fromMinorUnits(1, Currencies.USD),
+});
+// @ts-expect-error kind inexistente no es asignable a Discrepancy
+check<Discrepancy>({ kind: 'foo' });
+
+// ─── 3. RUNTIME: narrowing + exhaustividad ───
+// Dentro de cada `case`, TS te da acceso SOLO a los campos de esa variante.
+// Si agregás un 5º kind al union y no lo manejás, `assertNever(d)` no compila.
+function assertNever(x: never): never {
+  throw new Error(`Unhandled discrepancy kind: ${JSON.stringify(x)}`);
+}
+
+function summarize(d: Discrepancy): string {
+  switch (d.kind) {
+    case 'amount_mismatch':
+      return `amount ${d.internalAmount.toString()} vs ${d.providerAmount.toString()}`;
+    case 'state_mismatch':
+      return `state ${d.internalStatus} vs ${d.providerStatus}`;
+    case 'missing_internal':
+      return `missing internal for ${d.providerRef}`;
+    case 'missing_provider':
+      return `missing provider for ${d.internalId}`;
+    default:
+      return assertNever(d);
+  }
+}
+
+describe('Discrepancy model', () => {
+  it('narrows each variant by kind', () => {
+    expect(summarize(state)).toBe('state succeeded vs cancelled');
+    expect(summarize(missingInternal)).toBe('missing internal for evt_3');
+    expect(summarize(missingProvider)).toBe('missing provider for tx_4');
+    expect(summarize(amount)).toContain('amount');
+  });
+});
