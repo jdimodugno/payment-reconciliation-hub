@@ -7,6 +7,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
 import { WebhooksConsumer } from './webhooks.consumer';
 import { DeadLetterRepository } from './dead-letter.repository';
+import { StructuredLogger } from '@/shared/logging/logger';
 
 /**
  * WebhooksModule
@@ -48,6 +49,7 @@ import { DeadLetterRepository } from './dead-letter.repository';
     WebhookRepository,
     WebhooksConsumer,
     DeadLetterRepository,
+    StructuredLogger,
   ],
 })
 export class WebhooksModule {}

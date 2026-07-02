@@ -7,6 +7,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { HealthModule } from './modules/health/health.module';
 import { BullModule } from '@nestjs/bullmq';
+import { LoggerModule } from 'nestjs-pino';
 
 @Module({
   imports: [
@@ -23,6 +24,19 @@ import { BullModule } from '@nestjs/bullmq';
         },
       }),
       inject: [ConfigService],
+    }),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+        transport:
+          process.env.NODE_ENV !== 'production'
+            ? { target: 'pino-pretty' }
+            : undefined,
+        redact: {
+          paths: ['req.headers.authorization', 'req.headers.cookie'],
+          censor: 'Redacted',
+        },
+      },
     }),
     TransactionsModule,
     ProvidersModule,

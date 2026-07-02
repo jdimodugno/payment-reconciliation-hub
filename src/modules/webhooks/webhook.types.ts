@@ -1,3 +1,4 @@
+import { LogSerializer } from '@/shared/logging/log-serializer.interface';
 import { webhookEventStatusEnum } from './webhook.schema';
 
 export enum PendingManualReviewReason {
@@ -37,4 +38,22 @@ export type UnprocessedEventRow = {
 export type UnprocessedEvent = Omit<UnprocessedEventRow, 'receivedAt'> & {
   receivedAt: string;
   ageInDays: number;
+};
+
+export type SuccessfulReconciliationStatus = {
+  unprocessedEvents: UnprocessedEvent[];
+  deadLetteredEvents: number;
+  eventsByStatus: { processed: number; pendingManualReview: number };
+  total: number;
+};
+
+export type ErrorReconciliationStatus = { error: string };
+
+export type ReconciliationStatus =
+  | SuccessfulReconciliationStatus
+  | ErrorReconciliationStatus;
+
+export const WebhookEventSerializer: LogSerializer<WebhookEvent> = {
+  name: 'WebhookEvent',
+  allowlist: ['id', 'providerId', 'externalEventId', 'status', 'transactionId'],
 };

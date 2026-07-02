@@ -94,19 +94,19 @@ describe('Reconciliation status (e2e)', () => {
       );
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.length).toBe(3);
+      expect(res.body.unprocessedEvents.length).toBe(3);
       expect(
-        (res.body as UnprocessedEvent[]).findIndex(
+        (res.body.unprocessedEvents as UnprocessedEvent[]).findIndex(
           (evt) => evt.id === oldestEvt.id,
         ),
       ).toBe(0);
       expect(
-        (res.body as UnprocessedEvent[]).findIndex(
+        (res.body.unprocessedEvents as UnprocessedEvent[]).findIndex(
           (evt) => evt.id === middleEvt.id,
         ),
       ).toBe(1);
       expect(
-        (res.body as UnprocessedEvent[]).findIndex(
+        (res.body.unprocessedEvents as UnprocessedEvent[]).findIndex(
           (evt) => evt.id === newestEvt.id,
         ),
       ).toBe(2);
@@ -135,12 +135,16 @@ describe('Reconciliation status (e2e)', () => {
       );
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.length).toBe(2);
+      expect(res.body.unprocessedEvents.length).toBe(2);
       expect(
-        (res.body as UnprocessedEvent[]).findIndex((evt) => evt.id === evt1.id),
+        (res.body.unprocessedEvents as UnprocessedEvent[]).findIndex(
+          (evt) => evt.id === evt1.id,
+        ),
       ).toBe(0);
       expect(
-        (res.body as UnprocessedEvent[]).findIndex((evt) => evt.id === evt2.id),
+        (res.body.unprocessedEvents as UnprocessedEvent[]).findIndex(
+          (evt) => evt.id === evt2.id,
+        ),
       ).toBe(1);
     });
   });
@@ -158,7 +162,21 @@ describe('Reconciliation status (e2e)', () => {
       );
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.length).toBe(0);
+      expect(res.body.unprocessedEvents.length).toBe(0);
     });
+  });
+
+  // CARRYOVER (Día 20 → lunes): la Unidad 2 (counts) cambió la query a
+  // `count(*) filter (...)` SIN group by, que materializa processed=0 cuando no hay
+  // processed (el GROUP BY viejo lo OMITÍA → bug). Ese comportamiento vive en el SQL:
+  // el mock del repo no puede probarlo, solo un e2e con DB real. Hoy queda sin cubrir
+  // (verde por ausencia, no por cobertura). Levantar junto con Pino.
+  describe('counts derivados (partición + subset) — CARRYOVER', () => {
+    it.todo(
+      'materializa processed=0 cuando NO hay eventos processed (prueba el FILTER)',
+    );
+    it.todo(
+      'deadLettered cuenta eventos únicos (countDistinct) y NO infla el total (subset de pending_manual_review)',
+    );
   });
 });

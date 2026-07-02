@@ -2,6 +2,7 @@ import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ProcessWebhookEventResult,
+  SuccessfulReconciliationStatus,
   UnprocessedEventRow,
   WebhookEvent,
 } from './webhook.types';
@@ -35,6 +36,29 @@ export class WebhookRepository {
           processedAt: row.processedAt?.toISOString() ?? null,
         }
       : null;
+  }
+
+  async getEventsInTerminalStatusCountByGroup(): Promise<
+    SuccessfulReconciliationStatus['eventsByStatus'] | null
+  > {
+    try {
+      const [row] = await this.db
+        .select({
+          processed:
+            sql<number>`count(*) filter (where ${webhooksTable.status} = ${'processed'})`.mapWith(
+              Number,
+            ),
+          pendingManualReview:
+            sql<number>`count(*) filter (where ${webhooksTable.status} = ${'pending_manual_review'})`.mapWith(
+              Number,
+            ),
+        })
+        .from(webhooksTable);
+      return row;
+    } catch (error) {
+      console.error('An error ocurred during webhook events reading. ', error);
+      return null;
+    }
   }
 
   async create(
