@@ -1,29 +1,42 @@
 import { Money } from '@/shared/money/money';
+import { DiscrepancyKind } from './reconciliation.schema';
+import { TransactionStatus } from '../transactions/transaction.types';
 
 export type BaseMismatch = {
-  internalId: string;
-  providerRef: string;
   detectedAt: string;
 };
 
-export type AmountMismatch = BaseMismatch & {
-  kind: 'amount_mismatch';
+type ExistsInBoth = {
+  internalId: string;
+  providerRef: string;
+};
+
+export type AmountMismatch = BaseMismatch &
+  ExistsInBoth & {
+    kind: Extract<DiscrepancyKind, 'amount_mismatch'>;
+    providerAmount: Money;
+    internalAmount: Money;
+  };
+
+export type StateMismatch = BaseMismatch &
+  ExistsInBoth & {
+    kind: Extract<DiscrepancyKind, 'state_mismatch'>;
+    providerStatus: string;
+    internalStatus: TransactionStatus;
+  };
+
+export type MissingInternal = BaseMismatch & {
+  kind: Extract<DiscrepancyKind, 'missing_internal'>;
+  providerRef: string;
   providerAmount: Money;
-  internalAmount: Money;
-};
-
-export type StateMismatch = BaseMismatch & {
-  kind: 'state_mismatch';
   providerStatus: string;
-  internalStatus: string;
 };
 
-export type MissingInternal = Omit<BaseMismatch, 'internalId'> & {
-  kind: 'missing_internal';
-};
-
-export type MissingProvider = Omit<BaseMismatch, 'providerRef'> & {
-  kind: 'missing_provider';
+export type MissingProvider = BaseMismatch & {
+  kind: Extract<DiscrepancyKind, 'missing_provider'>;
+  internalId: string;
+  internalAmount: Money;
+  internalStatus: TransactionStatus;
 };
 
 export type Discrepancy =
@@ -31,3 +44,12 @@ export type Discrepancy =
   | StateMismatch
   | MissingInternal
   | MissingProvider;
+
+type AllKindsCovered = DiscrepancyKind extends Discrepancy['kind']
+  ? true
+  : false;
+
+type Expect<T extends true> = T;
+type _AssertExhaustive = Expect<AllKindsCovered>;
+
+export type StoredDiscrepancy = Discrepancy & { id: string };

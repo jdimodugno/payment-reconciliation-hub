@@ -7,6 +7,7 @@ import {
   MissingProvider,
   Discrepancy,
 } from './reconciliation.types';
+import { transactionStatusEnum } from '../transactions/transaction.schema';
 
 /**
  * Spec del MODELO (no de comportamiento de negocio). Prueba 3 cosas:
@@ -32,8 +33,8 @@ const state: StateMismatch = {
   kind: 'state_mismatch',
   internalId: 'tx_2',
   providerRef: 'evt_2',
-  internalStatus: 'succeeded',
-  providerStatus: 'cancelled',
+  internalStatus: transactionStatusEnum.enumValues[0],
+  providerStatus: 'pending',
   detectedAt: '2026-07-02T00:00:00.000Z',
 };
 
@@ -41,25 +42,23 @@ const missingInternal: MissingInternal = {
   kind: 'missing_internal',
   providerRef: 'evt_3',
   detectedAt: '2026-07-02T00:00:00.000Z',
+  providerAmount: Money.fromMinorUnits(20000, Currencies.USD),
+  providerStatus: 'cancelled',
 };
 
 const missingProvider: MissingProvider = {
   kind: 'missing_provider',
   internalId: 'tx_4',
   detectedAt: '2026-07-02T00:00:00.000Z',
+  internalAmount: Money.fromMinorUnits(2000, Currencies.USD),
+  internalStatus: transactionStatusEnum.enumValues[0],
 };
 
-// ─── 2. NEGATIVO: cada línea marcada DEBE dar error de tipo ───
-
-// (a) Asimetría: la variante NO expone el campo del otro lado. Lo probamos LEYÉNDOLO
-//     (línea corta, robusta al formatter; el error cae justo acá).
 // @ts-expect-error missing_internal no expone internalId (existe solo en el provider)
 void missingInternal.internalId;
 // @ts-expect-error missing_provider no expone providerRef (existe solo en interno)
 void missingProvider.providerRef;
 
-// (b) Campo obligatorio faltante: el error cae en la línea de apertura del literal,
-//     aunque el formatter lo parta en varias líneas.
 const check = <T>(_x: T): void => {};
 // @ts-expect-error amount_mismatch requiere providerAmount
 check<AmountMismatch>({
@@ -72,9 +71,6 @@ check<AmountMismatch>({
 // @ts-expect-error kind inexistente no es asignable a Discrepancy
 check<Discrepancy>({ kind: 'foo' });
 
-// ─── 3. RUNTIME: narrowing + exhaustividad ───
-// Dentro de cada `case`, TS te da acceso SOLO a los campos de esa variante.
-// Si agregás un 5º kind al union y no lo manejás, `assertNever(d)` no compila.
 function assertNever(x: never): never {
   throw new Error(`Unhandled discrepancy kind: ${JSON.stringify(x)}`);
 }
@@ -96,7 +92,7 @@ function summarize(d: Discrepancy): string {
 
 describe('Discrepancy model', () => {
   it('narrows each variant by kind', () => {
-    expect(summarize(state)).toBe('state succeeded vs cancelled');
+    expect(summarize(state)).toBe('state pending vs pending');
     expect(summarize(missingInternal)).toBe('missing internal for evt_3');
     expect(summarize(missingProvider)).toBe('missing provider for tx_4');
     expect(summarize(amount)).toContain('amount');
