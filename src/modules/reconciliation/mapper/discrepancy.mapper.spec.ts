@@ -42,7 +42,6 @@ describe('discrepancy.mapper', () => {
         kind: 'amount_mismatch',
         internalId: 'int-1',
         providerRef: 'prov-1',
-        detectedAt,
         internalAmount: Money.fromDecimal('100.00', Currencies.USD),
         providerAmount: Money.fromDecimal('105.00', Currencies.USD),
       };
@@ -69,7 +68,7 @@ describe('discrepancy.mapper', () => {
       );
       expect(original.internalId).toBe(back.internalId);
       expect(original.providerRef).toBe(back.providerRef);
-      expect(original.detectedAt).toBe(back.detectedAt);
+      expect(back.detectedAt).toBe(detectedAt);
     });
 
     it('state_mismatch sobrevive el viaje a la fila y de vuelta', () => {
@@ -78,7 +77,6 @@ describe('discrepancy.mapper', () => {
         kind: 'state_mismatch',
         internalId: 'int-1',
         providerRef: 'prov-1',
-        detectedAt,
         internalStatus: 'settled',
         providerStatus: 'payment.succeeded',
       };
@@ -94,7 +92,7 @@ describe('discrepancy.mapper', () => {
       expect(back.providerStatus).toBe(original.providerStatus);
       expect(back.internalId).toBe(original.internalId);
       expect(back.providerRef).toBe(original.providerRef);
-      expect(back.detectedAt).toBe(original.detectedAt);
+      expect(back.detectedAt).toBe(detectedAt);
     });
 
     it('missing_internal sobrevive el viaje a la fila y de vuelta', () => {
@@ -102,7 +100,6 @@ describe('discrepancy.mapper', () => {
       const original: MissingInternal = {
         kind: 'missing_internal',
         providerRef: 'prov-1',
-        detectedAt,
         providerAmount: Money.fromDecimal('105.00', Currencies.USD),
         providerStatus: 'payment.succeeded',
       };
@@ -122,7 +119,7 @@ describe('discrepancy.mapper', () => {
       );
       expect(back.providerStatus).toBe(original.providerStatus);
       expect(back.providerRef).toBe(original.providerRef);
-      expect(back.detectedAt).toBe(original.detectedAt);
+      expect(back.detectedAt).toBe(detectedAt);
     });
 
     it('missing_provider sobrevive el viaje a la fila y de vuelta', () => {
@@ -130,7 +127,6 @@ describe('discrepancy.mapper', () => {
       const original: MissingProvider = {
         kind: 'missing_provider',
         internalId: 'int-1',
-        detectedAt,
         internalAmount: Money.fromDecimal('100.00', Currencies.USD),
         internalStatus: 'settled',
       };
@@ -150,7 +146,7 @@ describe('discrepancy.mapper', () => {
       );
       expect(back.internalStatus).toBe(original.internalStatus);
       expect(back.internalId).toBe(original.internalId);
-      expect(back.detectedAt).toBe(original.detectedAt);
+      expect(back.detectedAt).toBe(detectedAt);
     });
   });
 

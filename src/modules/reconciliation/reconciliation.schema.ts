@@ -4,6 +4,7 @@ import {
   pgEnum,
   pgTable,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
@@ -23,16 +24,28 @@ export const discrepancyStatusEnum = pgEnum('discrepancyStatus', [
   'dismissed',
 ]);
 
-export const discrepanciesTable = pgTable('discrepancies', {
-  id: uuid().primaryKey().defaultRandom().notNull(),
-  kind: discrepancyKindEnum().notNull(),
-  internalId: uuid(),
-  providerRef: varchar(),
-  delta: numeric({ precision: 38, scale: 18 }),
-  status: discrepancyStatusEnum().notNull().default('unresolved'),
-  detectedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
-  payload: jsonb().notNull(),
-});
+export const discrepanciesTable = pgTable(
+  'discrepancies',
+  {
+    id: uuid().primaryKey().defaultRandom().notNull(),
+    kind: discrepancyKindEnum().notNull(),
+    internalId: uuid(),
+    providerRef: varchar(),
+    delta: numeric({ precision: 38, scale: 18 }),
+    status: discrepancyStatusEnum().notNull().default('unresolved'),
+    detectedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    payload: jsonb().notNull(),
+  },
+  (table) => [
+    // Árbitro de idempotencia del batch: un re-run sobre el mismo par + dimensión
+    // NO duplica. nullsNotDistinct() hace que dos NULL colisionen (PG15+), así los
+    // casos missing_* (un lado ausente = NULL) también quedan protegidos.
+    // Costo asumido (ADR-013): lock a PG15+, umbral de migración alto.
+    unique('discrepancies_pair_kind_uk')
+      .on(table.internalId, table.providerRef, table.kind)
+      .nullsNotDistinct(),
+  ],
+);
 
 // Columnas
 // - id — uuid/serial, PK

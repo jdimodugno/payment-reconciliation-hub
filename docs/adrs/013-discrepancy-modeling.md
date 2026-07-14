@@ -1,7 +1,7 @@
 # 013 — Discrepancy Modeling: One Row per (Pair, Dimension)
 
-**Status:** Proposed (design-first)
-**Date:** 2026-07-02
+**Status:** Accepted
+**Date:** 2026-07-02 (proposed) · 2026-07-14 (accepted — modelo vive end-to-end)
 **Authors:** Juan Di Modugno
 **Tags:** domain, reconciliation, modeling, audit, mvp
 
@@ -112,3 +112,34 @@ difiere en monto Y estado, se generan **dos** discrepancias (una `amount`, una `
 - **Abierto:** la state-machine de resolución y el algoritmo de *matching* (cómo se emparejan
   interno↔provider antes de comparar) quedan para ADRs futuros. Los datos para emparejar ya
   existen (identificadores de recurso/pago); se difiere la formalización, no la viabilidad.
+
+## Persistencia (paso 2 — implementado, d26)
+
+Lo que la aceptación cierra sobre el diseño de arriba:
+
+- **Tabla híbrida columnas + jsonb.** Columnas para filtrar/ordenar/particionar
+  (`kind`, `internalId`, `providerRef`, `delta`, `status`, `detectedAt`) + `payload` jsonb
+  por-variante. El `payload` es **snapshot de auditoría** (congela el lado presente al
+  momento de detectar), no una vista viva.
+- **Idempotencia por árbitro, no por check-then-insert.** `UNIQUE (internalId, providerRef,
+  kind)` + `onConflictDoNothing`: re-correr el batch sobre el mismo par + dimensión NO
+  duplica, y el conflicto es comportamiento esperado (no un error). Misma familia que el
+  UNIQUE-árbitro de ADR-007 (webhooks), sin un `200 vs 201` que devolver.
+- **`NULLS NOT DISTINCT` (PG15+).** Los `missing_*` tienen un lado del par en `NULL`; un
+  UNIQUE estándar trata cada `NULL` como distinto y **dejaría entrar el duplicado**.
+  `NULLS NOT DISTINCT` hace colisionar los `NULL` para que la idempotencia cubra también
+  esos kinds — sin fabricar un valor-centinela que ensucie la columna.
+  - **Costo aceptado (A3):** lock a **Postgres 15+**. Migrar a otro engine sin este feature
+    exigiría feature-parity vía COALESCE-a-sentinel + backfill + cambios de schema (umbral de
+    migración alto). Se acepta por el contexto (founder, un solo Postgres, baja probabilidad
+    real de cambio de motor). Alternativas descartadas: sentinel (miente en la columna,
+    rompe el guard `requiredProperty`) e índices parciales (más superficie por menos
+    claridad).
+- **Tipos honestos write/read.** El write-side (`Discrepancy`) NO tiene `id` ni `detectedAt`
+  —ambos son DB-owned (`defaultRandom` / `defaultNow`)—; sólo el read-side
+  (`StoredDiscrepancy`) los expone. El input a `save` no puede inventar campos que no le
+  pertenecen.
+- **Verificación:** e2e contra Postgres real (no jsonb simulado en Node) prueba (a) el
+  round-trip de `Money` cruzando la frontera del driver/jsonb y (b) `count===1` tras doble
+  `save` de un `missing_*` — con validación de que el test se pone **rojo** si se remueve el
+  `NULLS NOT DISTINCT` (no es un falso verde).

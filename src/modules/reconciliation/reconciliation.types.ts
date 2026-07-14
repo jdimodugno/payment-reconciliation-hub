@@ -2,43 +2,39 @@ import { Money } from '@/shared/money/money';
 import { DiscrepancyKind } from './reconciliation.schema';
 import { TransactionStatus } from '../transactions/transaction.types';
 
-export type BaseMismatch = {
-  detectedAt: string;
-};
-
 type ExistsInBoth = {
   internalId: string;
   providerRef: string;
 };
 
-export type AmountMismatch = BaseMismatch &
-  ExistsInBoth & {
-    kind: Extract<DiscrepancyKind, 'amount_mismatch'>;
-    providerAmount: Money;
-    internalAmount: Money;
-  };
+export type AmountMismatch = ExistsInBoth & {
+  kind: Extract<DiscrepancyKind, 'amount_mismatch'>;
+  providerAmount: Money;
+  internalAmount: Money;
+};
 
-export type StateMismatch = BaseMismatch &
-  ExistsInBoth & {
-    kind: Extract<DiscrepancyKind, 'state_mismatch'>;
-    providerStatus: string;
-    internalStatus: TransactionStatus;
-  };
+export type StateMismatch = ExistsInBoth & {
+  kind: Extract<DiscrepancyKind, 'state_mismatch'>;
+  providerStatus: string;
+  internalStatus: TransactionStatus;
+};
 
-export type MissingInternal = BaseMismatch & {
+export type MissingInternal = {
   kind: Extract<DiscrepancyKind, 'missing_internal'>;
   providerRef: string;
   providerAmount: Money;
   providerStatus: string;
 };
 
-export type MissingProvider = BaseMismatch & {
+export type MissingProvider = {
   kind: Extract<DiscrepancyKind, 'missing_provider'>;
   internalId: string;
   internalAmount: Money;
   internalStatus: TransactionStatus;
 };
 
+// Write-side: el hecho detectado ANTES de persistir. No tiene id ni detectedAt
+// porque ambos los posee la DB (id = defaultRandom, detectedAt = defaultNow).
 export type Discrepancy =
   | AmountMismatch
   | StateMismatch
@@ -52,4 +48,9 @@ type AllKindsCovered = DiscrepancyKind extends Discrepancy['kind']
 type Expect<T extends true> = T;
 type _AssertExhaustive = Expect<AllKindsCovered>;
 
-export type StoredDiscrepancy = Discrepancy & { id: string };
+// Read-side: lo que volvés a leer de la DB. id + detectedAt los agrega la
+// persistencia (DB-owner), no el dominio que detecta la discrepancia.
+export type StoredDiscrepancy = Discrepancy & {
+  id: string;
+  detectedAt: string;
+};

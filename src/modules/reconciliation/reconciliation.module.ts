@@ -1,26 +1,20 @@
 import { Module } from '@nestjs/common';
+import { DiscrepancyRepository } from './reconciliation.repository';
 
 /**
  * ReconciliationModule
  *
- * Matches internal transactions against provider-reported transactions
- * over time windows, identifying discrepancies.
+ * Persiste y (a futuro) reporta discrepancias entre el lado interno y el
+ * reportado por el provider. El modelo de dominio (union por-variante) vive en
+ * reconciliation.types; el mapper row<->union en mapper/; la persistencia acá.
  *
- * Critical concepts (semana 5):
- * - MATCHING ALGORITHM (by externalId + amount + date window)
- * - DISCREPANCY TYPES:
- *   - missing_internal (provider reports we don't have)
- *   - missing_external (we have it, provider doesn't report)
- *   - amount_mismatch (both exist, amounts differ)
- * - BATCH PROCESSING (async for large windows)
- * - REPORTING (discrepancies summary by period/provider)
- *
- * To implement:
- * - ReconciliationBatch entity
- * - Discrepancy entity
- * - ReconciliationEngine (matching logic)
- * - BatchProcessor (BullMQ consumer for async batches)
- * - ReportingService
+ * Estado (día 26):
+ * - [x] DiscrepancyRepository.save (idempotente vía UNIQUE + onConflictDoNothing)
+ * - [ ] find (diferido — sin consumidor todavía; entra con reporting/dashboard)
+ * - [ ] batch run que produce discrepancias reales (día 27)
  */
-@Module({})
+@Module({
+  providers: [DiscrepancyRepository],
+  exports: [DiscrepancyRepository],
+})
 export class ReconciliationModule {}

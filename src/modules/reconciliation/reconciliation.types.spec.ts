@@ -26,7 +26,6 @@ const amount: AmountMismatch = {
   providerRef: 'evt_1',
   internalAmount: Money.fromMinorUnits(2000, Currencies.USD),
   providerAmount: Money.fromMinorUnits(20000, Currencies.USD),
-  detectedAt: '2026-07-02T00:00:00.000Z',
 };
 
 const state: StateMismatch = {
@@ -35,13 +34,11 @@ const state: StateMismatch = {
   providerRef: 'evt_2',
   internalStatus: transactionStatusEnum.enumValues[0],
   providerStatus: 'pending',
-  detectedAt: '2026-07-02T00:00:00.000Z',
 };
 
 const missingInternal: MissingInternal = {
   kind: 'missing_internal',
   providerRef: 'evt_3',
-  detectedAt: '2026-07-02T00:00:00.000Z',
   providerAmount: Money.fromMinorUnits(20000, Currencies.USD),
   providerStatus: 'cancelled',
 };
@@ -49,7 +46,6 @@ const missingInternal: MissingInternal = {
 const missingProvider: MissingProvider = {
   kind: 'missing_provider',
   internalId: 'tx_4',
-  detectedAt: '2026-07-02T00:00:00.000Z',
   internalAmount: Money.fromMinorUnits(2000, Currencies.USD),
   internalStatus: transactionStatusEnum.enumValues[0],
 };
@@ -65,7 +61,6 @@ check<AmountMismatch>({
   kind: 'amount_mismatch',
   internalId: 'i',
   providerRef: 'e',
-  detectedAt: 'd',
   internalAmount: Money.fromMinorUnits(1, Currencies.USD),
 });
 // @ts-expect-error kind inexistente no es asignable a Discrepancy
