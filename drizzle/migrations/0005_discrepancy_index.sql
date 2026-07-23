@@ -1,0 +1,1 @@
+ALTER TABLE "discrepancies" ADD CONSTRAINT "discrepancies_pair_kind_uk" UNIQUE NULLS NOT DISTINCT("internalId","providerRef","kind");

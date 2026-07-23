@@ -77,6 +77,36 @@ describe('Money', () => {
     });
   });
 
+  describe('equals — value equality (amount + currency)', () => {
+    it('should be true for same amount and same currency', () => {
+      const a = Money.fromDecimal('100.50', 'usd');
+      const b = Money.fromDecimal('100.50', 'usd');
+
+      expect(a.equals(b)).toBe(true);
+    });
+
+    it('should be true regardless of decimal scale representation (0.1 === 0.10)', () => {
+      const a = Money.fromDecimal('0.1', 'usd');
+      const b = Money.fromDecimal('0.10', 'usd');
+
+      expect(a.equals(b)).toBe(true);
+    });
+
+    it('should be false for different amounts in the same currency', () => {
+      const a = Money.fromDecimal('100.00', 'usd');
+      const b = Money.fromDecimal('100.01', 'usd');
+
+      expect(a.equals(b)).toBe(false);
+    });
+
+    it('should be false for the same numeric amount in different currencies', () => {
+      const usd = Money.fromDecimal('100.00', 'usd');
+      const eur = Money.fromDecimal('100.00', 'eur');
+
+      expect(usd.equals(eur)).toBe(false);
+    });
+  });
+
   describe('Edge cases — the cases that matter most in fintech', () => {
     it('should handle zero amounts', () => {
       const money = Money.fromMinorUnits(0, 'usd');
