@@ -37,4 +37,17 @@ export class Money {
   getCurrency(): string {
     return this.currency;
   }
+
+  /**
+   * Igualdad de valor: mismo monto Y misma moneda.
+   *
+   * La comparación del monto usa Decimal.equals (exacta, T1) — nunca ===
+   * sobre number ni sobre el string renderizado (0.10 vs 0.1 romperían).
+   * Distinta moneda ⇒ NO iguales: 100 USD y 100 ARS no son el mismo valor;
+   * en reconciliación, esa diferencia debe emerger como discrepancia, no
+   * colapsarse en true.
+   */
+  equals(other: Money): boolean {
+    return this.currency === other.currency && this.amount.equals(other.amount);
+  }
 }
