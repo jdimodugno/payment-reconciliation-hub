@@ -240,4 +240,24 @@ export class WebhookRepository {
       })
       .where(eq(webhooksTable.id, eventId));
   }
+
+  // ADR-015: reinyección por flip transitorio. El WHERE en 'pending_manual_review'
+  // es el ÁRBITRO atómico: solo revive un muerto, nunca toca un 'processed' ni un
+  // 'received' orgánico. Bajo reprocess concurrente, solo uno gana (returning vacío
+  // para el resto). `processed_at`/`transaction_id` de un muerto no-procesado ya
+  // están en null → no requieren reset.
+  async reactivateForReprocess(eventId: string): Promise<boolean> {
+    const reactivated = await this.db
+      .update(webhooksTable)
+      .set({ status: 'received' })
+      .where(
+        and(
+          eq(webhooksTable.id, eventId),
+          eq(webhooksTable.status, 'pending_manual_review'),
+        ),
+      )
+      .returning({ id: webhooksTable.id });
+
+    return reactivated.length > 0;
+  }
 }

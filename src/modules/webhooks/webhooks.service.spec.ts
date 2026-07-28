@@ -14,7 +14,10 @@ import {
   WEBHOOKS_QUEUE_NAME,
 } from './webhook.constants';
 import { getQueueToken } from '@nestjs/bullmq';
-import { EventNotFoundError } from './webhook.exception';
+import {
+  EventNotFoundError,
+  EventNotReprocessableError,
+} from './webhook.exception';
 import { DeadLetterRepository } from './dead-letter.repository';
 import { StructuredLogger } from '@/shared/logging/logger';
 
@@ -32,11 +35,13 @@ const webhookRepository = {
   fetchEventById: jest.fn(),
   create: jest.fn(),
   getEventsInTerminalStatusCountByGroup: jest.fn(),
+  reactivateForReprocess: jest.fn(),
 };
 
 const deadLetterRepository = {
   append: jest.fn(),
   getDistinctEventIdCount: jest.fn(),
+  getFailureCountForEvent: jest.fn(),
 };
 
 const providerInstance = {
@@ -432,6 +437,71 @@ describe('WebhookService', () => {
         }),
       );
       expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('WebhookService.reprocess (ADR-015)', () => {
+    beforeEach(async () => {
+      jest.clearAllMocks();
+    });
+
+    it('evento inexistente → EventNotFoundError, no flipea ni encola', async () => {
+      webhookRepository.fetchEventById.mockResolvedValue(null);
+
+      await expect(service.reprocess('missing')).rejects.toThrow(
+        EventNotFoundError,
+      );
+      expect(webhookRepository.reactivateForReprocess).not.toHaveBeenCalled();
+      expect(webhooksQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('evento no está en pending_manual_review → EventNotReprocessableError, no encola', async () => {
+      webhookRepository.fetchEventById.mockResolvedValue(
+        buildEvent({ status: 'processed' }),
+      );
+      // el árbitro atómico rebota: 0 filas flipeadas
+      webhookRepository.reactivateForReprocess.mockResolvedValue(false);
+
+      await expect(service.reprocess('evt-uuid')).rejects.toThrow(
+        EventNotReprocessableError,
+      );
+      expect(webhooksQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('muerto reprocesable → flipea y encola con jobId por-intento (_retry_${count})', async () => {
+      webhookRepository.fetchEventById.mockResolvedValue(
+        buildEvent({ id: 'evt-dead', status: 'pending_manual_review' }),
+      );
+      webhookRepository.reactivateForReprocess.mockResolvedValue(true);
+      // murió 2 veces → el 3er intento lleva _retry_2
+      deadLetterRepository.getFailureCountForEvent.mockResolvedValue(2);
+
+      await service.reprocess('evt-dead');
+
+      expect(webhookRepository.reactivateForReprocess).toHaveBeenCalledWith(
+        'evt-dead',
+      );
+      expect(webhooksQueue.add).toHaveBeenCalledWith(
+        WEBHOOKS_PROCESSOR_JOB_NAME,
+        { id: 'evt-dead' },
+        {
+          jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-dead_retry_2`,
+        },
+      );
+    });
+
+    it('el jobId por-intento difiere del determinístico del path orgánico (evita el dedup de BullMQ)', async () => {
+      webhookRepository.fetchEventById.mockResolvedValue(
+        buildEvent({ id: 'evt-dead', status: 'pending_manual_review' }),
+      );
+      webhookRepository.reactivateForReprocess.mockResolvedValue(true);
+      deadLetterRepository.getFailureCountForEvent.mockResolvedValue(1);
+
+      await service.reprocess('evt-dead');
+
+      const organicJobId = `${WEBHOOKS_PROCESSOR_JOB_NAME}_evt-dead`;
+      const usedJobId = webhooksQueue.add.mock.calls[0][2].jobId;
+      expect(usedJobId).not.toBe(organicJobId);
     });
   });
 });

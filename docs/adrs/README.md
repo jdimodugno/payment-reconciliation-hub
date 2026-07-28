@@ -36,6 +36,7 @@ Decisiones técnicas significativas del proyecto, en orden cronológico.
 | 012 | [Observability: structured logging (allowlist) + DB-derived counters](./012-observability-logging-and-metrics.md) | Proposed | 2026-06-25 |
 | 013 | [Discrepancy modeling: one row per (pair, dimension)](./013-discrepancy-modeling.md) | Accepted | 2026-07-14 |
 | 014 | [Reconciliation matching strategy: re-derive, don't trust](./014-reconciliation-matching-strategy.md) | Accepted | 2026-07-23 |
+| 015 | [Dead-letter recovery / reinjection mechanism](./015-dead-letter-recovery-reinjection.md) | Accepted | 2026-07-28 |
 
 ## ADRs anticipados (a escribir durante el roadmap)
 
