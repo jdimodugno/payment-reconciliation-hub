@@ -8,6 +8,8 @@ import { transactionsTable } from '@/modules/transactions/transaction.schema';
 import { WebhookService } from '@/modules/webhooks/webhooks.service';
 import { eq } from 'drizzle-orm';
 import { WebhookEvent } from '@/modules/webhooks/webhook.types';
+import { UnsupportedCurrencyError } from '@/modules/webhooks/webhook.exception';
+import { NonRetriableError } from '@/shared/exception/non-retriable.exception';
 import { deadLetterEventsTable } from '@/modules/webhooks/dead-letter.schema';
 
 describe('Webhook processing (e2e)', () => {
@@ -123,9 +125,52 @@ describe('Webhook processing (e2e)', () => {
         'event-type no mapeable → status pending_manual_review, reason UNSUPPORTED_EVENT_TYPE',
       );
     */
-    it.todo(
-      'currency no soportada → pending_manual_review, reason UNSUPPORTED_CURRENCY',
-    );
+    // This test replaced an `it.todo` that assumed an unsupported currency
+    // reached `pending_manual_review`. It does not, and cannot: the guard that
+    // produced that reason sat after `fetchDetails`, which rejects the currency
+    // first. Only a mocked provider could reach it. The real behaviour is a
+    // non-retriable failure raised at the anti-corruption boundary, so the
+    // consumer stops retrying a value that can never become valid.
+    it('currency no soportada → UnsupportedCurrencyError (no-retriable) en el borde, sin transacción', async () => {
+      const rawRow = await seedReceivedWebhook({
+        externalEventId: 'evt_bad_currency',
+        payload: {
+          id: 'evt_bad_currency',
+          object: 'event',
+          type: 'payment_intent.succeeded',
+          data: { object: { id: 'pi_bad', amount: 2000, currency: 'xyz' } },
+        },
+      });
+      const row: WebhookEvent = {
+        ...rawRow,
+        receivedAt: rawRow.receivedAt.toISOString(),
+        processedAt: null,
+      };
+
+      await expect(service.processSingleEvent(row)).rejects.toBeInstanceOf(
+        UnsupportedCurrencyError,
+      );
+      // non-retriable: the consumer maps it to UnrecoverableError, so BullMQ
+      // does not burn three attempts on it.
+      await expect(service.processSingleEvent(row)).rejects.toBeInstanceOf(
+        NonRetriableError,
+      );
+
+      const stored = await fetchWebhook(row.id);
+      expect(stored.status).toBe('received');
+      expect(stored.processedAt).toBeNull();
+      expect(await countTransactions()).toBe(0);
+
+      // KNOWN GAP (dead-letter.e2e it.todo, deferred since d19): the event dies
+      // in BullMQ's volatile failed-set with no annex row, so it leaves no
+      // durable audit trail. Same hole `MalformedProviderEventError` already
+      // has; it needs the retry-exhausted mechanism, not a test.
+      const annex = await db
+        .select()
+        .from(deadLetterEventsTable)
+        .where(eq(deadLetterEventsTable.eventId, row.id));
+      expect(annex.length).toBe(0);
+    });
   });
 
   describe('flujo async end-to-end (recepción → cola → worker → transacción)', () => {

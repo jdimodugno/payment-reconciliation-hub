@@ -1,8 +1,11 @@
 import { LogSerializer } from '@/shared/logging/log-serializer.interface';
 import { webhookEventStatusEnum } from './webhook.schema';
 
+// UNSUPPORTED_CURRENCY was removed: nothing could produce it. The guard that
+// used it sat after enrichment, which rejects an unknown currency first, so the
+// reason named a state the system never reaches. Unreachable vocabulary reads
+// as a covered case and hides that the path is not handled.
 export enum PendingManualReviewReason {
-  UNSUPPORTED_CURRENCY = 'unsupported_currency',
   UNSUPPORTED_EVENT_TYPE = 'unsupported_event_type',
 }
 

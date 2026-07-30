@@ -9,7 +9,6 @@ import {
 import { ProvidersService } from '../providers/providers.service';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
-import { isValidCurrency } from '@/shared/money/currency';
 import { WEBHOOKS_PROCESSOR_JOB_NAME } from './webhook.constants';
 import { mapEventToTransaction } from './mapper/event-transaction.mapper';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -145,15 +144,11 @@ export class WebhookService {
       providerInstance.parseWebhook(singleEvent.payload),
     );
 
-    if (!isValidCurrency(enrichedEventData.currency)) {
-      await this.transitionToManualReview(
-        singleEvent.id,
-        PendingManualReviewReason.UNSUPPORTED_CURRENCY,
-        { currency: enrichedEventData.currency },
-      );
-      return;
-    }
-
+    // The unsupported-currency guard used to live here and was unreachable:
+    // `fetchDetails` builds a Money, which rejects an unknown currency and
+    // throws before this line. Only a mocked provider could produce the state
+    // this guard checked for. The provider now raises
+    // `UnsupportedCurrencyError` (non-retriable) at the boundary instead.
     const eventToTransaction = mapEventToTransaction(enrichedEventData.type);
 
     if (!eventToTransaction) {

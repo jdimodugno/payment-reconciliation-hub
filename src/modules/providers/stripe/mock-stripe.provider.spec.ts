@@ -1,3 +1,5 @@
+import { UnsupportedCurrencyError } from '@/modules/webhooks/webhook.exception';
+import { NonRetriableError } from '@/shared/exception/non-retriable.exception';
 import { MockStripeProvider } from './mock-stripe.provider';
 
 const provider = new MockStripeProvider();
@@ -44,5 +46,22 @@ describe('MockStripeProvider.fetchDetails', () => {
     );
     expect(enriched.amount).toEqual('20');
     expect(enriched.currency).toEqual('usd');
+  });
+
+  // Enrichment is the anti-corruption boundary. Money would reject the unknown
+  // currency with a plain Error, which the consumer treats as transient and
+  // retries three times for a value that can never become valid.
+  it('rejects an unknown currency as non-retriable, not as a generic error', async () => {
+    const raw = provider.parseWebhook({
+      ...validPayload,
+      data: { object: { ...validPayload.data.object, currency: 'xyz' } },
+    });
+
+    await expect(provider.fetchDetails(raw)).rejects.toBeInstanceOf(
+      UnsupportedCurrencyError,
+    );
+    await expect(provider.fetchDetails(raw)).rejects.toBeInstanceOf(
+      NonRetriableError,
+    );
   });
 });
