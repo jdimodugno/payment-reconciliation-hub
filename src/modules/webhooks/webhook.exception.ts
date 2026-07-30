@@ -1,4 +1,7 @@
 import { NonRetriableError } from '@/shared/exception/non-retriable.exception';
+import { EntityNotFoundError } from '@/shared/exception/entity-not-found.exception';
+import { ConflictError } from '@/shared/exception/conflict.exception';
+import { WebhookEventStatus } from './webhook.types';
 
 export class UnableToPersistTransactionError extends Error {
   constructor(externalEventId: string) {
@@ -23,10 +26,19 @@ export class UnableToEnqueueEventError extends Error {
   }
 }
 
-export class EventNotFoundError extends Error {
+export class EventNotFoundError extends EntityNotFoundError {
   constructor(id: string) {
-    super(`Unable to find event with id: ${id}`);
+    super('WebhookEvent', id);
     this.name = 'EventNotFoundError';
+  }
+}
+
+export class EventNotReprocessableError extends ConflictError {
+  constructor(id: string, currentStatus: WebhookEventStatus) {
+    super(
+      `Event ${id} is not reprocessable: only 'pending_manual_review' events can be reinjected, but current status is '${currentStatus}'`,
+    );
+    this.name = 'EventNotReprocessableError';
   }
 }
 

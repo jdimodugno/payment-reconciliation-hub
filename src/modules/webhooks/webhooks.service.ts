@@ -15,7 +15,10 @@ import { mapEventToTransaction } from './mapper/event-transaction.mapper';
 import { InjectQueue } from '@nestjs/bullmq';
 import { WEBHOOKS_QUEUE_NAME } from './webhook.constants';
 import { Job, Queue } from 'bullmq';
-import { EventNotFoundError } from './webhook.exception';
+import {
+  EventNotFoundError,
+  EventNotReprocessableError,
+} from './webhook.exception';
 import { DeadLetterRepository } from './dead-letter.repository';
 import {
   DeadLetterEventData,
@@ -92,12 +95,39 @@ export class WebhookService {
     await this.processSingleEvent(eventToProcess);
   }
 
-  private async enqueueEvent(evt: WebhookEvent): Promise<Job> {
+  // ADR-015: reinyección manual de un evento dead-lettered. Flip transitorio
+  // pending_manual_review → received (árbitro atómico en el repo), luego reusa la
+  // maquinaria de procesamiento vía enqueueEvent con un jobId por-intento.
+  // El camino de re-muerte NO necesita código nuevo: si vuelve a fallar,
+  // processSingleEvent → transitionToManualReview appendea al anexo y vuelve a
+  // pending_manual_review.
+  async reprocess(eventId: string): Promise<void> {
+    const event = await this.webhookRepository.fetchEventById(eventId);
+    if (!event) {
+      throw new EventNotFoundError(eventId);
+    }
+
+    const reactivated =
+      await this.webhookRepository.reactivateForReprocess(eventId);
+    if (!reactivated) {
+      throw new EventNotReprocessableError(eventId, event.status);
+    }
+
+    const failureCount =
+      await this.deadLetterRepository.getFailureCountForEvent(eventId);
+
+    await this.enqueueEvent(
+      event,
+      `${WEBHOOKS_PROCESSOR_JOB_NAME}_${eventId}_retry_${failureCount}`,
+    );
+  }
+
+  private async enqueueEvent(evt: WebhookEvent, jobId?: string): Promise<Job> {
     return this.webhooksQueue.add(
       WEBHOOKS_PROCESSOR_JOB_NAME,
       { id: evt.id },
       {
-        jobId: `${WEBHOOKS_PROCESSOR_JOB_NAME}_${evt.id}`,
+        jobId: jobId ?? `${WEBHOOKS_PROCESSOR_JOB_NAME}_${evt.id}`,
       },
     );
   }
