@@ -172,11 +172,53 @@ describe('Reconciliation status (e2e)', () => {
   // el mock del repo no puede probarlo, solo un e2e con DB real. Hoy queda sin cubrir
   // (verde por ausencia, no por cobertura). Levantar junto con Pino.
   describe('counts derivados (partición + subset) — CARRYOVER', () => {
-    it.todo(
-      'materializa processed=0 cuando NO hay eventos processed (prueba el FILTER)',
-    );
-    it.todo(
-      'deadLettered cuenta eventos únicos (countDistinct) y NO infla el total (subset de pending_manual_review)',
-    );
+    it('materializa processed=0 cuando NO hay eventos processed (prueba el FILTER)', async () => {
+      // Sin filas `processed`. El `GROUP BY` viejo omitía la clave entera y el
+      // campo llegaba `undefined`; `count(*) filter (...)` la materializa en 0.
+      await seedWebhook({
+        status: 'pending_manual_review',
+        externalEventId: 'evt_only_pending',
+      });
+
+      const res = await request(app.getHttpServer()).get(
+        '/webhooks/reconciliation-status',
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.eventsByStatus.processed).toBe(0);
+      expect(res.body.eventsByStatus.pendingManualReview).toBe(1);
+      expect(res.body.total).toBe(1);
+    });
+
+    it('deadLettered cuenta eventos únicos (countDistinct) y NO infla el total (subset de pending_manual_review)', async () => {
+      // Un solo evento muerto con DOS filas de anexo: el anexo es append-only y
+      // acumula una fila por muerte (ADR-011), así que contar filas mentiría.
+      const dead = await seedWebhook({
+        status: 'pending_manual_review',
+        externalEventId: 'evt_dead_twice',
+      });
+      await db.insert(deadLetterEventsTable).values([
+        { eventId: dead.id, reason: 'first_death', lastError: null },
+        { eventId: dead.id, reason: 'second_death', lastError: null },
+      ]);
+      await seedWebhook({
+        status: 'processed',
+        processedAt: newest,
+        externalEventId: 'evt_ok',
+      });
+
+      const res = await request(app.getHttpServer()).get(
+        '/webhooks/reconciliation-status',
+      );
+
+      expect(res.statusCode).toBe(200);
+      // dos filas de anexo, un evento
+      expect(res.body.deadLetteredEvents).toBe(1);
+      // dead-lettered es un SUBSET de pending_manual_review, no una tercera
+      // partición: el total son los estados terminales, y sumarlo lo inflaría.
+      expect(res.body.eventsByStatus.pendingManualReview).toBe(1);
+      expect(res.body.eventsByStatus.processed).toBe(1);
+      expect(res.body.total).toBe(2);
+    });
   });
 });
