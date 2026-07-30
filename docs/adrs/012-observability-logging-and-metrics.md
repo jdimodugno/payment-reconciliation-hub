@@ -1,6 +1,6 @@
 # 012 — Observability for the MVP: structured logging (allowlist) + DB-derived counters
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-06-25
 **Authors:** Juan Di Modugno
 **Tags:** observability, infra, security, mvp
@@ -92,6 +92,14 @@ Para el MVP vamos a implementar **structured logging con Pino** y **contadores d
 ### Risks
 - Allowlist demasiado agresivo → debugging ciego. Mitigación: revisar los campos logueados cuando un incidente real muestre que falta contexto.
 - Conteo por query sobre tablas grandes → costo creciente. Mitigación: índices por `status`; revisitar si la tabla escala.
+- **Deuda conocida (detectada 2026-07-30, d29): el `err` esquiva la allowlist.**
+  `StructuredLogger.error`/`warn` spreadean `err` crudo en el payload de pino, fuera de
+  `getLoggableFields`. La promesa *fail-closed* se cumple para la entidad y **no** para
+  el error: un mensaje de driver que arrastre payload, fragmento de query o datos del
+  cliente sale entero. Accepted con la deuda anotada en vez de quedar en `Proposed`: la
+  decisión está tomada y en uso; lo que falta es cumplimiento, no definición. ADR-016
+  amplía su alcance (más errores viajan al punto de decisión para ser logueados) sin
+  introducirla. Cierre planificado: d30.
 
 ## When to Revisit
 

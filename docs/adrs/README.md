@@ -33,10 +33,11 @@ Decisiones técnicas significativas del proyecto, en orden cronológico.
 | 009 | [Provider event to domain transaction mapping](./009-provider-event-to-domain-transaction-mapping.md) | Accepted | 2026-06-09 |
 | 010 | [Retry & dead-letter strategy (domain-owned)](./010-retry-and-dead-letter-strategy.md) | Accepted | 2026-06-12 |
 | 011 | [Dead-letter as domain annex table](./011-dead-letter-domain-annex-table.md) | Accepted | 2026-06-23 |
-| 012 | [Observability: structured logging (allowlist) + DB-derived counters](./012-observability-logging-and-metrics.md) | Proposed | 2026-06-25 |
+| 012 | [Observability: structured logging (allowlist) + DB-derived counters](./012-observability-logging-and-metrics.md) | Accepted | 2026-06-25 |
 | 013 | [Discrepancy modeling: one row per (pair, dimension)](./013-discrepancy-modeling.md) | Accepted | 2026-07-14 |
 | 014 | [Reconciliation matching strategy: re-derive, don't trust](./014-reconciliation-matching-strategy.md) | Accepted | 2026-07-23 |
 | 015 | [Dead-letter recovery / reinjection mechanism](./015-dead-letter-recovery-reinjection.md) | Accepted | 2026-07-28 |
+| 016 | [Error propagation and logging placement in repositories](./016-error-propagation-and-logging-placement.md) | Accepted | 2026-07-30 |
 
 ## ADRs anticipados (a escribir durante el roadmap)
 
