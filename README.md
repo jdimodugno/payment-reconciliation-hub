@@ -163,6 +163,7 @@ flowchart TD
 | `POST /webhooks/:providerId` | Idempotent reception (UNIQUE arbiter · ADR-007). `201 new` / `200 duplicate`. |
 | `GET /transactions/:id` | Read a transaction. Domain error (`TransactionNotFoundError`) mapped to `404` via a polymorphic exception filter, not a framework exception in the service. |
 | `GET /reconciliation-status` | Read-only observability lens: unprocessed events (`received` / `pending_manual_review` with `processed_at IS NULL`), ordered by `received_at` ascending so aging is visible. Does **not** assert orphan-hood yet — no state machine / processing-window modeled. |
+| `POST /webhooks/:eventId/reprocess` | Manual reinjection of a dead-lettered event (ADR-015). Transient flip `pending_manual_review → received` (atomic `WHERE`-guarded), re-enqueued with a per-attempt `jobId` (`_retry_${n}`) so BullMQ does not dedupe against the completed original job. `202 accepted`; `404` if unknown; `409` if not in `pending_manual_review`. On re-failure it lands back in `pending_manual_review` + a new annex row. |
 
 > Note: `processPendingEvents` (the processing flow above) is invoked internally, not over HTTP.
 
