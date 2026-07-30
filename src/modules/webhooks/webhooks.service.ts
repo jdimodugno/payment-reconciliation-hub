@@ -209,12 +209,6 @@ export class WebhookService {
 
     const now = Date.now();
 
-    if (deadLetteredEvents === null || countByStatus === null) {
-      return {
-        error: 'An error occurred while obtaining reconciliation status',
-      };
-    }
-
     return {
       deadLetteredEvents,
       eventsByStatus: countByStatus,

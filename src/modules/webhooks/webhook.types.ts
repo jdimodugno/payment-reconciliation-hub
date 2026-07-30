@@ -47,11 +47,10 @@ export type SuccessfulReconciliationStatus = {
   total: number;
 };
 
-export type ErrorReconciliationStatus = { error: string };
-
-export type ReconciliationStatus =
-  | SuccessfulReconciliationStatus
-  | ErrorReconciliationStatus;
+// The degraded `{ error }` arm is gone: a failed read is unexpected
+// infrastructure failure, not a domain outcome, so it propagates and the HTTP
+// boundary answers 500 instead of a 200 that monitoring counts as success.
+export type ReconciliationStatus = SuccessfulReconciliationStatus;
 
 export const WebhookEventSerializer: LogSerializer<WebhookEvent> = {
   name: 'WebhookEvent',
