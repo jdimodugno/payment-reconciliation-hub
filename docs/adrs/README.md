@@ -38,6 +38,7 @@ Decisiones técnicas significativas del proyecto, en orden cronológico.
 | 014 | [Reconciliation matching strategy: re-derive, don't trust](./014-reconciliation-matching-strategy.md) | Accepted | 2026-07-23 |
 | 015 | [Dead-letter recovery / reinjection mechanism](./015-dead-letter-recovery-reinjection.md) | Accepted | 2026-07-28 |
 | 016 | [Error propagation and logging placement in repositories](./016-error-propagation-and-logging-placement.md) | Accepted | 2026-07-30 |
+| 017 | [Reconciliation imperative shell: ownership, trigger, observation semantics](./017-reconciliation-imperative-shell.md) | Accepted | 2026-08-04 |
 
 ## ADRs anticipados (a escribir durante el roadmap)
 
