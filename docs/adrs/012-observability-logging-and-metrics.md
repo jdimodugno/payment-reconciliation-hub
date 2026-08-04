@@ -100,6 +100,77 @@ Para el MVP vamos a implementar **structured logging con Pino** y **contadores d
   decisión está tomada y en uso; lo que falta es cumplimiento, no definición. ADR-016
   amplía su alcance (más errores viajan al punto de decisión para ser logueados) sin
   introducirla. Cierre planificado: d30.
+  → **Resuelta 2026-08-04, ver la enmienda siguiente.**
+
+## Amendment (2026-08-04) — the allowlist promise extended to errors
+
+### The hole, measured
+
+The fail-closed promise could not hold for `err`, and the reason is structural: the
+allowlist covers entities *we* construct, while `Error` objects are constructed by
+`node-postgres`, Zod, or `fetch`. Pino's default `err` serializer copies the error's
+own enumerable properties, so everything a driver attaches ships to the log stream.
+Executed against `pino@8`:
+
+```json
+{ "type": "Error",
+  "message": "duplicate key value violates unique constraint",
+  "detail": "Key (external_id)=(evt_777) already exists.",
+  "table": "webhook_events",
+  "constraint": "webhook_events_external_id_uk",
+  "code": "23505" }
+```
+
+`detail` carries the row value. The line that matters: `constraint` is an
+**identifier** (tells you what broke), `detail` is a **value** (is the data).
+Logging the first is observability; logging the second is the leak.
+
+An allowlist over error *fields* was not obviously sufficient either, because a
+third party can put the value inside `message`. That residual risk is accepted
+explicitly below — it is not solved, it is bounded.
+
+### Decision: allowlist at the sink (floor) + translation at the boundary (enrichment)
+
+**Floor — a custom pino `err` serializer with a field allowlist.** Unknown error
+fields are dropped by construction. This is what restores the fail-closed promise:
+a repository added next month that forgets everything still cannot leak `detail`.
+
+**Enrichment — repositories translate driver errors at the boundary.** The
+repository is the only place holding both the driver error with all its fields and
+the knowledge of which operation was running. It selects the safe context and
+discards the rest:
+
+```json
+{ "type": "PersistenceError",
+  "message": "dead_letter.append: duplicate key value violates unique constraint",
+  "operation": "dead_letter.append",
+  "constraint": "webhook_events_external_id_uk",
+  "pgCode": "23505" }
+```
+
+Same anti-corruption move as ADR-016's `UnsupportedCurrencyError`: the edge that
+touches the third party translates it into our vocabulary. Wrapping also drops the
+cause's own properties (verified: pino does not copy them), so `detail` dies at the
+boundary even before the serializer sees it — the two layers are independent.
+
+### Why both, and not either alone
+
+Translation alone is **fail-open**: miss one boundary and the leak returns silently.
+A serializer alone is **fail-closed but blind** — it cannot supply `operation`, and
+its safe-field list is a guess about every library, present and future.
+
+### Relationship to ADR-016
+
+ADR-016 states *infra does not log what it propagates*. That rule is unchanged:
+**translating is not logging.** The repository emits no log line; it constructs an
+error in its own vocabulary and propagates it. What this amendment adds is that
+infra translates what it propagates.
+
+### Accepted residual risk
+
+The third party's `message` still ships (pino concatenates the cause's message).
+The surface is reduced, not eliminated. Revisit if a driver is found to place row
+values in `message` rather than in a dedicated field.
 
 ## When to Revisit
 
