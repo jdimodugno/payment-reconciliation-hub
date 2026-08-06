@@ -51,5 +51,9 @@ import { StructuredLogger } from '@/shared/logging/logger';
     DeadLetterRepository,
     StructuredLogger,
   ],
+  // ADR-017 D1: se exporta el SERVICIO, no los repositorios. `reconciliation/`
+  // necesita el lado provider re-derivado, y pedirlo por contrato lo deja libre
+  // del esquema de `webhook_events`. Los repos siguen siendo privados del módulo.
+  exports: [WebhookService],
 })
 export class WebhooksModule {}

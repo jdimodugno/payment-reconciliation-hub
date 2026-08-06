@@ -4,7 +4,7 @@ import { WebhookRepository } from './webhooks.repository';
 import { ProvidersService } from '../providers/providers.service';
 import {
   PendingManualReviewReason,
-  SuccessfulReconciliationStatus,
+  SuccessfulWebhookPipelineStatus,
   WebhookEvent,
 } from './webhook.types';
 import z from 'zod';
@@ -40,7 +40,6 @@ const webhookRepository = {
 const deadLetterRepository = {
   append: jest.fn(),
   getDistinctEventIdCount: jest.fn(),
-  getFailureCountForEvent: jest.fn(),
 };
 
 const providerInstance = {
@@ -115,6 +114,9 @@ describe('WebhookService', () => {
         expect(webhookRepository.markEventAsProcessed).not.toHaveBeenCalled();
         expect(deadLetterRepository.append).toHaveBeenCalledWith({
           eventId: event.id,
+          // La muerte congela la generación en la que ocurrió: el `retries` del
+          // evento al morir. Un evento recién recibido muere en la generación 0.
+          generation: event.retries,
           reason: PendingManualReviewReason.UNSUPPORTED_EVENT_TYPE,
           lastError: expect.any(String),
         });
@@ -175,7 +177,7 @@ describe('WebhookService', () => {
     });
   });
 
-  describe('WebhookService.getReconciliationStatus', () => {
+  describe('WebhookService.getPipelineStatus', () => {
     const NOW = new Date('2026-06-11T00:00:00.000Z').getTime();
     const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -209,11 +211,11 @@ describe('WebhookService', () => {
 
       deadLetterRepository.getDistinctEventIdCount.mockResolvedValue(1);
 
-      const rawResult = await service.getReconciliationStatus();
+      const rawResult = await service.getPipelineStatus();
 
       if (Object.hasOwn(rawResult, 'error')) throw new Error('expected error');
 
-      const castedResult = rawResult as SuccessfulReconciliationStatus;
+      const castedResult = rawResult as SuccessfulWebhookPipelineStatus;
 
       const events = castedResult.unprocessedEvents;
 
@@ -242,10 +244,10 @@ describe('WebhookService', () => {
 
     it('repo vacío → []', async () => {
       webhookRepository.findUnprocessedEvents.mockResolvedValue([]);
-      const rawResult = await service.getReconciliationStatus();
+      const rawResult = await service.getPipelineStatus();
       if (Object.hasOwn(rawResult, 'error'))
         throw new Error('unexpected error');
-      const castedResult = rawResult as SuccessfulReconciliationStatus;
+      const castedResult = rawResult as SuccessfulWebhookPipelineStatus;
 
       expect(castedResult.unprocessedEvents.length).toBe(0);
     });
@@ -260,7 +262,7 @@ describe('WebhookService', () => {
         readFailure,
       );
 
-      await expect(service.getReconciliationStatus()).rejects.toBe(readFailure);
+      await expect(service.getPipelineStatus()).rejects.toBe(readFailure);
     });
 
     it('falla la lectura de dead-lettered → propaga, no devuelve status degradado', async () => {
@@ -275,7 +277,7 @@ describe('WebhookService', () => {
         readFailure,
       );
 
-      await expect(service.getReconciliationStatus()).rejects.toBe(readFailure);
+      await expect(service.getPipelineStatus()).rejects.toBe(readFailure);
     });
   });
 
@@ -452,8 +454,8 @@ describe('WebhookService', () => {
       webhookRepository.fetchEventById.mockResolvedValue(
         buildEvent({ status: 'processed' }),
       );
-      // el árbitro atómico rebota: 0 filas flipeadas
-      webhookRepository.reactivateForReprocess.mockResolvedValue(false);
+      // el árbitro atómico rebota: 0 filas flipeadas → sin generación
+      webhookRepository.reactivateForReprocess.mockResolvedValue(null);
 
       await expect(service.reprocess('evt-uuid')).rejects.toThrow(
         EventNotReprocessableError,
@@ -461,13 +463,14 @@ describe('WebhookService', () => {
       expect(webhooksQueue.add).not.toHaveBeenCalled();
     });
 
-    it('muerto reprocesable → flipea y encola con jobId por-intento (_retry_${count})', async () => {
+    it('muerto reprocesable → flipea y encola con jobId por-intento (_retry_${generation})', async () => {
       webhookRepository.fetchEventById.mockResolvedValue(
         buildEvent({ id: 'evt-dead', status: 'pending_manual_review' }),
       );
-      webhookRepository.reactivateForReprocess.mockResolvedValue(true);
-      // murió 2 veces → el 3er intento lleva _retry_2
-      deadLetterRepository.getFailureCountForEvent.mockResolvedValue(2);
+      // El flip DEVUELVE la generación nueva (retries ya incrementado). Antes se
+      // contaban filas del anexo; ese número dejó de significar "veces que murió"
+      // en cuanto los reintentos de la transición empezaron a dejar rastro.
+      webhookRepository.reactivateForReprocess.mockResolvedValue(2);
 
       await service.reprocess('evt-dead');
 
@@ -487,8 +490,7 @@ describe('WebhookService', () => {
       webhookRepository.fetchEventById.mockResolvedValue(
         buildEvent({ id: 'evt-dead', status: 'pending_manual_review' }),
       );
-      webhookRepository.reactivateForReprocess.mockResolvedValue(true);
-      deadLetterRepository.getFailureCountForEvent.mockResolvedValue(1);
+      webhookRepository.reactivateForReprocess.mockResolvedValue(1);
 
       await service.reprocess('evt-dead');
 

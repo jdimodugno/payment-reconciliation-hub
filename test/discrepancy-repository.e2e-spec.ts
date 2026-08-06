@@ -39,6 +39,8 @@ describe('DiscrepancyRepository (e2e, DB real)', () => {
   // Un missing_internal: lado provider presente, lado interno AUSENTE (internalId NULL).
   // Elegido porque ejerce lo que el resto no: (a) Money cruzando el jsonb real,
   // (b) el NULL del par que activa nullsNotDistinct.
+  const RUN_ID = '22222222-2222-4222-8222-222222222222';
+
   const aMissingInternal = (providerRef: string): MissingInternal => ({
     kind: 'missing_internal',
     providerRef,
@@ -64,7 +66,7 @@ describe('DiscrepancyRepository (e2e, DB real)', () => {
     it('save persiste y fromRow re-hidrata el Money a través del jsonb de Postgres', async () => {
       const original = aMissingInternal('prov-rt-1');
 
-      await repo.save(original);
+      await repo.save(original, RUN_ID);
       const back = fromRow(await selectRow()) as MissingInternal & {
         id: string;
       };
@@ -89,8 +91,11 @@ describe('DiscrepancyRepository (e2e, DB real)', () => {
     it('save dos veces del mismo par + kind con lado NULL no duplica (count===1)', async () => {
       const d = aMissingInternal('prov-dup-1');
 
-      await repo.save(d);
-      await repo.save(d);
+      // Mismo runId en ambos saves: el UNIQUE ahora incluye runId, asi que
+      // dos runIds distintos producirian dos filas legitimas y el test dejaria
+      // de probar idempotencia.
+      await repo.save(d, RUN_ID);
+      await repo.save(d, RUN_ID);
 
       expect(await countRows()).toBe(1);
     });

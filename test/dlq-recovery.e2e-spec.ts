@@ -60,6 +60,7 @@ describe('DLQ recovery / reinjection (e2e)', () => {
     for (let i = 0; i < deaths; i++) {
       await db.insert(deadLetterEventsTable).values({
         eventId: event.id,
+        generation: i,
         reason: 'unsupported_event_type',
         lastError: null,
       });

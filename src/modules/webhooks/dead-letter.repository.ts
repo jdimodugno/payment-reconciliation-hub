@@ -2,7 +2,7 @@ import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
 import { Inject, Injectable } from '@nestjs/common';
 import { DeadLetterEventData } from './dead-letter.types';
 import { deadLetterEventsTable } from './dead-letter.schema';
-import { countDistinct, eq, sql } from 'drizzle-orm';
+import { countDistinct } from 'drizzle-orm';
 
 @Injectable()
 export class DeadLetterRepository {
@@ -14,25 +14,27 @@ export class DeadLetterRepository {
   // leaving an event in manual review with NO annex row — the very evidence
   // that makes the failure auditable. The error propagates so the consumer
   // re-throws and BullMQ retries the whole transition (attempts: 3).
+  //
+  // Idempotent per death via UNIQUE (event_id, generation). `onConflictDoNothing`
+  // is safe HERE — and was not safe in `DiscrepancyRepository.save` (ADR-017 D4) —
+  // because this key captures everything that distinguishes one case from another:
+  // a conflict can only mean "this death is already recorded", never "the same
+  // death, but the facts changed". The BullMQ retries of a failed transition all
+  // carry the same generation and converge onto one row; the next real death comes
+  // after a reactivation flip, which bumps the generation and gets its own row.
+  //
+  // Note this does NOT weaken the rule above: a write failure still propagates.
+  // Only the specific unique-violation is treated as expected convergence.
   async append(deadLetterEventData: DeadLetterEventData): Promise<void> {
-    await this.db.insert(deadLetterEventsTable).values({
-      eventId: deadLetterEventData.eventId,
-      lastError: deadLetterEventData.lastError,
-      reason: deadLetterEventData.reason,
-    });
-  }
-
-  // ADR-015: el count de filas del anexo para un evento = cuántas veces murió =
-  // número de intento. Se usa como sufijo del jobId de reinyección (`_retry_${n}`),
-  // dando un jobId fresco por intento (BullMQ deduplica por jobId; el determinístico
-  // que protege el path orgánico estorbaría al reprocess) + rastro del intento.
-  async getFailureCountForEvent(eventId: string): Promise<number> {
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)`.mapWith(Number) })
-      .from(deadLetterEventsTable)
-      .where(eq(deadLetterEventsTable.eventId, eventId));
-
-    return row.count;
+    await this.db
+      .insert(deadLetterEventsTable)
+      .values({
+        eventId: deadLetterEventData.eventId,
+        generation: deadLetterEventData.generation,
+        lastError: deadLetterEventData.lastError,
+        reason: deadLetterEventData.reason,
+      })
+      .onConflictDoNothing();
   }
 
   // A read failure here is unexpected infrastructure failure, not a domain

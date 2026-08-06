@@ -9,7 +9,7 @@ import { transactionsTable } from '@/modules/transactions/transaction.schema';
 import { UnprocessedEvent } from '@/modules/webhooks/webhook.types';
 import { deadLetterEventsTable } from '@/modules/webhooks/dead-letter.schema';
 
-describe('Reconciliation status (e2e)', () => {
+describe('Webhook pipeline status (e2e)', () => {
   let app: INestApplication;
   let db: DrizzleDB;
   let providerId: string;
@@ -90,7 +90,7 @@ describe('Reconciliation status (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer()).get(
-        '/webhooks/reconciliation-status',
+        '/webhooks/pipeline-status',
       );
 
       expect(res.statusCode).toBe(200);
@@ -131,7 +131,7 @@ describe('Reconciliation status (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer()).get(
-        '/webhooks/reconciliation-status',
+        '/webhooks/pipeline-status',
       );
 
       expect(res.statusCode).toBe(200);
@@ -158,7 +158,7 @@ describe('Reconciliation status (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer()).get(
-        '/webhooks/reconciliation-status',
+        '/webhooks/pipeline-status',
       );
 
       expect(res.statusCode).toBe(200);
@@ -181,7 +181,7 @@ describe('Reconciliation status (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer()).get(
-        '/webhooks/reconciliation-status',
+        '/webhooks/pipeline-status',
       );
 
       expect(res.statusCode).toBe(200);
@@ -198,8 +198,18 @@ describe('Reconciliation status (e2e)', () => {
         externalEventId: 'evt_dead_twice',
       });
       await db.insert(deadLetterEventsTable).values([
-        { eventId: dead.id, reason: 'first_death', lastError: null },
-        { eventId: dead.id, reason: 'second_death', lastError: null },
+        {
+          eventId: dead.id,
+          generation: 0,
+          reason: 'first_death',
+          lastError: null,
+        },
+        {
+          eventId: dead.id,
+          generation: 1,
+          reason: 'second_death',
+          lastError: null,
+        },
       ]);
       await seedWebhook({
         status: 'processed',
@@ -208,7 +218,7 @@ describe('Reconciliation status (e2e)', () => {
       });
 
       const res = await request(app.getHttpServer()).get(
-        '/webhooks/reconciliation-status',
+        '/webhooks/pipeline-status',
       );
 
       expect(res.statusCode).toBe(200);

@@ -54,3 +54,13 @@ export type StoredDiscrepancy = Discrepancy & {
   id: string;
   detectedAt: string;
 };
+
+// Resultado de UNA corrida (ADR-017). `scanned` va explícito porque un run con
+// cero discrepancias sobre cero datos y uno sobre miles de pares se leen igual
+// mirando sólo el conteo de hallazgos, y no significan lo mismo.
+export type ReconciliationRunResult = {
+  runId: string;
+  scanned: { internal: number; provider: number; unreadable: number };
+  discrepancies: number;
+  byKind: Record<DiscrepancyKind, number>;
+};
