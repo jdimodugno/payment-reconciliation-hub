@@ -4,7 +4,7 @@ import { WebhookRepository } from './webhooks.repository';
 import { ProvidersService } from '../providers/providers.service';
 import {
   PendingManualReviewReason,
-  SuccessfulReconciliationStatus,
+  SuccessfulWebhookPipelineStatus,
   WebhookEvent,
 } from './webhook.types';
 import z from 'zod';
@@ -177,7 +177,7 @@ describe('WebhookService', () => {
     });
   });
 
-  describe('WebhookService.getReconciliationStatus', () => {
+  describe('WebhookService.getPipelineStatus', () => {
     const NOW = new Date('2026-06-11T00:00:00.000Z').getTime();
     const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -211,11 +211,11 @@ describe('WebhookService', () => {
 
       deadLetterRepository.getDistinctEventIdCount.mockResolvedValue(1);
 
-      const rawResult = await service.getReconciliationStatus();
+      const rawResult = await service.getPipelineStatus();
 
       if (Object.hasOwn(rawResult, 'error')) throw new Error('expected error');
 
-      const castedResult = rawResult as SuccessfulReconciliationStatus;
+      const castedResult = rawResult as SuccessfulWebhookPipelineStatus;
 
       const events = castedResult.unprocessedEvents;
 
@@ -244,10 +244,10 @@ describe('WebhookService', () => {
 
     it('repo vacío → []', async () => {
       webhookRepository.findUnprocessedEvents.mockResolvedValue([]);
-      const rawResult = await service.getReconciliationStatus();
+      const rawResult = await service.getPipelineStatus();
       if (Object.hasOwn(rawResult, 'error'))
         throw new Error('unexpected error');
-      const castedResult = rawResult as SuccessfulReconciliationStatus;
+      const castedResult = rawResult as SuccessfulWebhookPipelineStatus;
 
       expect(castedResult.unprocessedEvents.length).toBe(0);
     });
@@ -262,7 +262,7 @@ describe('WebhookService', () => {
         readFailure,
       );
 
-      await expect(service.getReconciliationStatus()).rejects.toBe(readFailure);
+      await expect(service.getPipelineStatus()).rejects.toBe(readFailure);
     });
 
     it('falla la lectura de dead-lettered → propaga, no devuelve status degradado', async () => {
@@ -277,7 +277,7 @@ describe('WebhookService', () => {
         readFailure,
       );
 
-      await expect(service.getReconciliationStatus()).rejects.toBe(readFailure);
+      await expect(service.getPipelineStatus()).rejects.toBe(readFailure);
     });
   });
 

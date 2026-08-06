@@ -38,10 +38,10 @@ export class WebhookController {
     return webhookEvent;
   }
 
-  @Get('/reconciliation-status')
+  @Get('/pipeline-status')
   @HttpCode(HttpStatus.OK)
-  async getReconciliationStatus() {
-    return this.webhookService.getReconciliationStatus();
+  async getPipelineStatus() {
+    return this.webhookService.getPipelineStatus();
   }
 
   // ADR-015: reinyección manual de un evento dead-lettered.

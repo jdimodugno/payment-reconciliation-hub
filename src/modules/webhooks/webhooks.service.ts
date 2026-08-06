@@ -4,7 +4,7 @@ import {
   PendingManualReviewReason,
   ProviderSideEvent,
   ProviderSideEventsResult,
-  ReconciliationStatus,
+  WebhookPipelineStatus,
   WebhookEvent,
   WebhookEventSerializer,
 } from './webhook.types';
@@ -268,7 +268,7 @@ export class WebhookService {
     return { events: readable, unreadable };
   }
 
-  async getReconciliationStatus(): Promise<ReconciliationStatus> {
+  async getPipelineStatus(): Promise<WebhookPipelineStatus> {
     const events = await this.webhookRepository.findUnprocessedEvents();
     const countByStatus =
       await this.webhookRepository.getEventsInTerminalStatusCountByGroup();

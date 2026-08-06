@@ -2,7 +2,7 @@ import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ProcessWebhookEventResult,
-  SuccessfulReconciliationStatus,
+  SuccessfulWebhookPipelineStatus,
   UnprocessedEventRow,
   WebhookEvent,
 } from './webhook.types';
@@ -42,7 +42,7 @@ export class WebhookRepository {
   // unexpected infrastructure failure, not a domain outcome. It propagates with
   // its cause instead of collapsing into a `null` that means "could not read".
   async getEventsInTerminalStatusCountByGroup(): Promise<
-    SuccessfulReconciliationStatus['eventsByStatus']
+    SuccessfulWebhookPipelineStatus['eventsByStatus']
   > {
     const [row] = await this.db
       .select({

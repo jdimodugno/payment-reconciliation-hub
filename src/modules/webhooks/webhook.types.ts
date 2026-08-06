@@ -45,7 +45,7 @@ export type UnprocessedEvent = Omit<UnprocessedEventRow, 'receivedAt'> & {
   ageInDays: number;
 };
 
-export type SuccessfulReconciliationStatus = {
+export type SuccessfulWebhookPipelineStatus = {
   unprocessedEvents: UnprocessedEvent[];
   deadLetteredEvents: number;
   eventsByStatus: { processed: number; pendingManualReview: number };
@@ -55,7 +55,7 @@ export type SuccessfulReconciliationStatus = {
 // The degraded `{ error }` arm is gone: a failed read is unexpected
 // infrastructure failure, not a domain outcome, so it propagates and the HTTP
 // boundary answers 500 instead of a 200 that monitoring counts as success.
-export type ReconciliationStatus = SuccessfulReconciliationStatus;
+export type WebhookPipelineStatus = SuccessfulWebhookPipelineStatus;
 
 /**
  * Lo que el PROVIDER dice de un pago, re-derivado desde los eventos recibidos.
