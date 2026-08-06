@@ -18,6 +18,15 @@ export class TransactionsRepository {
     return mapRowToTransaction(row);
   }
 
+  // Lado interno de la reconciliación (ADR-017 D3): scan completo. Es deuda
+  // escrita, no descuido — la ventana necesita una marca de agua que todavía no
+  // tiene consumidor. Revisit: primera corrida cuya duración se note, o el cron.
+  async findAll(): Promise<Transaction[]> {
+    const rows = await this.db.select().from(transactionsTable);
+
+    return rows.map(mapRowToTransaction);
+  }
+
   async findById(id: string): Promise<Transaction | null> {
     const [row] = await this.db
       .select()

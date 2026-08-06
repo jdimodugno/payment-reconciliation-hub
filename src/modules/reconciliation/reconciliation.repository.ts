@@ -18,10 +18,25 @@ export class DiscrepancyRepository {
    * el conflicto NO es un error, es la convergencia idempotente. Cualquier OTRO
    * error de la DB sigue propagándose solo (T5: modelar, no silenciar en bloque).
    */
-  async save(discrepancy: Discrepancy): Promise<void> {
+  async save(discrepancy: Discrepancy, runId: string): Promise<void> {
     await this.db
       .insert(discrepanciesTable)
-      .values(toRow(discrepancy))
+      .values(toRow(discrepancy, runId))
       .onConflictDoNothing();
+  }
+
+  /**
+   * Persiste lo que UNA corrida observó. `runId` lo genera el shell, no el repo:
+   * la identidad de la corrida es del caso de uso, y el repo solo la escribe.
+   *
+   * Sin transacción a propósito: cada observación es un hecho independiente
+   * (ADR-013 decisión B — una discrepancia por dimensión, con acción correctiva
+   * distinta). Si una falla, las ya escritas siguen siendo ciertas; envolverlas
+   * en un all-or-nothing borraría hallazgos válidos por un problema ajeno.
+   */
+  async saveAll(discrepancies: Discrepancy[], runId: string): Promise<void> {
+    for (const discrepancy of discrepancies) {
+      await this.save(discrepancy, runId);
+    }
   }
 }

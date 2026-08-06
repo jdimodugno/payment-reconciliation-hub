@@ -18,6 +18,8 @@ function throughJsonb(payload: unknown): unknown {
   return JSON.parse(JSON.stringify(payload));
 }
 
+const RUN_ID = '11111111-1111-4111-8111-111111111111';
+
 function asStoredRow(
   newRow: ReturnType<typeof toRow>,
   overrides: { id: string; detectedAt: Date },
@@ -25,7 +27,7 @@ function asStoredRow(
   return {
     id: overrides.id,
     detectedAt: overrides.detectedAt,
-    status: 'unresolved',
+    runId: newRow.runId,
     internalId: newRow.internalId ?? null,
     providerRef: newRow.providerRef ?? null,
     delta: newRow.delta ?? null,
@@ -46,7 +48,7 @@ describe('discrepancy.mapper', () => {
         providerAmount: Money.fromDecimal('105.00', Currencies.USD),
       };
 
-      const row = toRow(original);
+      const row = toRow(original, RUN_ID);
       const stored = asStoredRow(row, {
         id: 'disc-1',
         detectedAt: new Date(detectedAt),
@@ -81,7 +83,7 @@ describe('discrepancy.mapper', () => {
         providerStatus: 'payment.succeeded',
       };
 
-      const stored = asStoredRow(toRow(original), {
+      const stored = asStoredRow(toRow(original, RUN_ID), {
         id: 'disc-2',
         detectedAt: new Date(detectedAt),
       });
@@ -104,7 +106,7 @@ describe('discrepancy.mapper', () => {
         providerStatus: 'payment.succeeded',
       };
 
-      const stored = asStoredRow(toRow(original), {
+      const stored = asStoredRow(toRow(original, RUN_ID), {
         id: 'disc-3',
         detectedAt: new Date(detectedAt),
       });
@@ -131,7 +133,7 @@ describe('discrepancy.mapper', () => {
         internalStatus: 'settled',
       };
 
-      const stored = asStoredRow(toRow(original), {
+      const stored = asStoredRow(toRow(original, RUN_ID), {
         id: 'disc-4',
         detectedAt: new Date(detectedAt),
       });

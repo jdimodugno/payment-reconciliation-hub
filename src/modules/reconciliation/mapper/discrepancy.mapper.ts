@@ -7,10 +7,14 @@ import { Money } from '@/shared/money/money';
 export type DiscrepancyRow = typeof discrepanciesTable.$inferSelect;
 export type NewDiscrepancyRow = typeof discrepanciesTable.$inferInsert;
 
-export function toRow(discrepancy: Discrepancy): NewDiscrepancyRow {
+export function toRow(
+  discrepancy: Discrepancy,
+  runId: string,
+): NewDiscrepancyRow {
   switch (discrepancy.kind) {
     case 'amount_mismatch':
       return {
+        runId,
         kind: discrepancy.kind,
         internalId: discrepancy.internalId,
         providerRef: discrepancy.providerRef,
@@ -25,6 +29,7 @@ export function toRow(discrepancy: Discrepancy): NewDiscrepancyRow {
       };
     case 'state_mismatch':
       return {
+        runId,
         kind: discrepancy.kind,
         internalId: discrepancy.internalId,
         providerRef: discrepancy.providerRef,
@@ -35,6 +40,7 @@ export function toRow(discrepancy: Discrepancy): NewDiscrepancyRow {
       };
     case 'missing_internal':
       return {
+        runId,
         kind: discrepancy.kind,
         providerRef: discrepancy.providerRef,
         payload: {
@@ -45,6 +51,7 @@ export function toRow(discrepancy: Discrepancy): NewDiscrepancyRow {
       };
     case 'missing_provider':
       return {
+        runId,
         kind: discrepancy.kind,
         internalId: discrepancy.internalId,
         payload: {

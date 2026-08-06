@@ -2,7 +2,7 @@ import { DRIZZLE, DrizzleDB } from '@/shared/database/database.module';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ProcessWebhookEventResult,
-  SuccessfulReconciliationStatus,
+  SuccessfulWebhookPipelineStatus,
   UnprocessedEventRow,
   WebhookEvent,
 } from './webhook.types';
@@ -42,7 +42,7 @@ export class WebhookRepository {
   // unexpected infrastructure failure, not a domain outcome. It propagates with
   // its cause instead of collapsing into a `null` that means "could not read".
   async getEventsInTerminalStatusCountByGroup(): Promise<
-    SuccessfulReconciliationStatus['eventsByStatus']
+    SuccessfulWebhookPipelineStatus['eventsByStatus']
   > {
     const [row] = await this.db
       .select({
@@ -130,6 +130,20 @@ export class WebhookRepository {
       .orderBy(asc(webhooksTable.receivedAt));
 
     return events;
+  }
+
+  // Universo entero de eventos recibidos: la reconciliación re-deriva el lado
+  // provider desde acá (ADR-014: auditar, no confiar). Incluye los NO procesados
+  // a propósito — un evento que llegó y nunca se materializó en Transaction es
+  // exactamente un `missing_internal`, y filtrarlo cegaría al matcher.
+  async findAllEvents(): Promise<WebhookEvent[]> {
+    const events = await this.db.select().from(webhooksTable);
+
+    return events.map((evt) => ({
+      ...evt,
+      receivedAt: evt.receivedAt.toISOString(),
+      processedAt: evt.processedAt?.toISOString() ?? null,
+    }));
   }
 
   async getPendingWebhookEvents(): Promise<{
@@ -239,18 +253,26 @@ export class WebhookRepository {
   // 'received' orgánico. Bajo reprocess concurrente, solo uno gana (returning vacío
   // para el resto). `processed_at`/`transaction_id` de un muerto no-procesado ya
   // están en null → no requieren reset.
-  async reactivateForReprocess(eventId: string): Promise<boolean> {
-    const reactivated = await this.db
+  // Devuelve la GENERACIÓN nueva (el `retries` ya incrementado), o `null` si no
+  // reactivó nada. El incremento va en la MISMA sentencia que el árbitro de
+  // concurrencia (`WHERE status = 'pending_manual_review'`): el estado que cambia
+  // es el candado, así que subir el contador aparte abriría una ventana donde una
+  // reactivación se queda sin generación (o al revés).
+  async reactivateForReprocess(eventId: string): Promise<number | null> {
+    const [reactivated] = await this.db
       .update(webhooksTable)
-      .set({ status: 'received' })
+      .set({
+        status: 'received',
+        retries: sql`${webhooksTable.retries} + 1`,
+      })
       .where(
         and(
           eq(webhooksTable.id, eventId),
           eq(webhooksTable.status, 'pending_manual_review'),
         ),
       )
-      .returning({ id: webhooksTable.id });
+      .returning({ retries: webhooksTable.retries });
 
-    return reactivated.length > 0;
+    return reactivated?.retries ?? null;
   }
 }

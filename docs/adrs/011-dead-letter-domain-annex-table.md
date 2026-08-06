@@ -86,6 +86,69 @@ ordenamiento que el inbox/outbox (200-post-save): ordenar para que la inconsiste
 sobreviviente sea la inofensiva, en vez de pagar atomicidad. El orden está **protegido
 por un test** de `invocationCallOrder` (validado por mutación).
 
+## Amendment (2026-08-06) — one row per DEATH: the arbiter `(event_id, generation)`
+
+### What changed underneath this ADR
+
+The original rule was **no unique on `event_id`** — N rows per event is the audit
+trail. That was correct while the only way to produce N rows was to die N times.
+Two later decisions broke that assumption:
+
+- **ADR-015** made an event able to die more than once (manual reinjection).
+- **ADR-016** made `append` propagate, so BullMQ retries the whole transition up
+  to 3 times — and those retries are **the same death**.
+
+The annex then fused two counts: *"times it died"* and *"times we recorded a
+death"*. ADR-015 reads the second while meaning the first — it derived the retry
+attempt number from `count(*)` over the annex.
+
+### The natural key of a death
+
+Not time, not the error message: two retries of one transition differ in both and
+are still one death. **Two deaths are separated by exactly one reactivation flip**,
+which is the only exit from the terminal `pending_manual_review` state.
+
+So `webhook_events.retries` — declared since the pre-BullMQ era and never
+written — becomes the generation counter, incremented **inside the same statement**
+as the atomic flip (the changing state is the lock; a separate UPDATE would open a
+window where a reactivation has no generation, or the reverse).
+
+```sql
+UNIQUE (event_id, generation)   -- generation = webhook_events.retries at death
+```
+
+`generation` does not violate this ADR's invariant. `retries` remains the single
+source of truth for how many times the event was reactivated; the annex freezes
+**the generation in which this death occurred**, a fact that never changes again.
+Same nature as `failed_at`, and the same distinction ADR-013 drew for `payload`:
+an annex records audit facts, not a live view.
+
+`onConflictDoNothing` is correct here — unlike in `DiscrepancyRepository.save`
+(ADR-017 D4) — because this key captures everything that distinguishes the cases:
+a conflict can only mean "already recorded", never "recorded, but changed".
+
+`getFailureCountForEvent` is deleted. The attempt number for the reinjection
+`jobId` now comes from the flip itself, which returns the new generation.
+
+### Risk accepted, not fixed: the retry-after-flip window
+
+`processSingleEventById` fetches the event and processes it **without a status
+gate**. The atomic claim (`WHERE status = 'received' AND processed_at IS NULL`)
+lives inside `markEventAsProcessed`, on the success path — while
+`transitionToManualReview` runs before it. So a job retry whose flip already
+succeeded re-runs the whole transition.
+
+That is harmless today because `append` is idempotent per generation. It stops
+being harmless in one window: if a **manual** reprocess (ADR-015) lands between
+the successful flip and the job retry, `retries` moves, and the retry writes a
+second row for the same death under a new generation. The arbiter cannot see it,
+because the key changed underneath.
+
+Not fixed here: gating `processSingleEventById` by status means deciding what
+"processable" means, which is ADR-008 / ADR-015 territory, not a two-line patch.
+**Revisit trigger:** the first automated (non-manual) reprocess path, which would
+turn a human-timed window into a machine-timed one.
+
 ## Consequences
 
 - **Positivas:** recovery observable y auditable; fuente de verdad única; reversible.

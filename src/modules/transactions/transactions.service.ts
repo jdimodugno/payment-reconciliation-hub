@@ -16,6 +16,10 @@ export class TransactionsService {
     });
   }
 
+  async findAll(): Promise<Transaction[]> {
+    return this.repository.findAll();
+  }
+
   async findById(id: string): Promise<Transaction> {
     const transaction = await this.repository.findById(id);
 

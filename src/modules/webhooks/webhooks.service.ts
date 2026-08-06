@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { WebhookRepository } from './webhooks.repository';
 import {
   PendingManualReviewReason,
-  ReconciliationStatus,
+  ProviderSideEvent,
+  ProviderSideEventsResult,
+  WebhookPipelineStatus,
   WebhookEvent,
   WebhookEventSerializer,
 } from './webhook.types';
 import { ProvidersService } from '../providers/providers.service';
+import { EnrichedProviderEvent } from '../providers/provider-event.type';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
 import { WEBHOOKS_PROCESSOR_JOB_NAME } from './webhook.constants';
@@ -106,18 +109,19 @@ export class WebhookService {
       throw new EventNotFoundError(eventId);
     }
 
-    const reactivated =
+    // La generación viene del propio flip: es el `retries` ya incrementado. Antes
+    // se derivaba contando filas del anexo, un número que dejó de significar
+    // "veces que murió" en cuanto los reintentos de la transición empezaron a
+    // dejar rastro. El flip es la definición misma de una muerte nueva.
+    const generation =
       await this.webhookRepository.reactivateForReprocess(eventId);
-    if (!reactivated) {
+    if (generation === null) {
       throw new EventNotReprocessableError(eventId, event.status);
     }
 
-    const failureCount =
-      await this.deadLetterRepository.getFailureCountForEvent(eventId);
-
     await this.enqueueEvent(
       event,
-      `${WEBHOOKS_PROCESSOR_JOB_NAME}_${eventId}_retry_${failureCount}`,
+      `${WEBHOOKS_PROCESSOR_JOB_NAME}_${eventId}_retry_${generation}`,
     );
   }
 
@@ -153,7 +157,7 @@ export class WebhookService {
 
     if (!eventToTransaction) {
       await this.transitionToManualReview(
-        singleEvent.id,
+        singleEvent,
         PendingManualReviewReason.UNSUPPORTED_EVENT_TYPE,
         { type: enrichedEventData.type, provider: providerInstance.name },
       );
@@ -194,7 +198,77 @@ export class WebhookService {
     this.logger.info(singleEvent, WebhookEventSerializer, messageToLog);
   }
 
-  async getReconciliationStatus(): Promise<ReconciliationStatus> {
+  /**
+   * Lado provider para la reconciliación, re-derivado al vuelo (ADR-014: auditar,
+   * no confiar). Re-corre la MISMA cadena que creó las Transaction —
+   * `parseWebhook` → `fetchDetails` → `mapEventToTransaction`— sobre lo que el
+   * provider dijo, sin leer nada del lado interno.
+   *
+   * Devuelve una forma PROPIA, no `ProviderSide`: si este módulo importara los
+   * tipos de `reconciliation/`, la flecha apuntaría para los dos lados y se caería
+   * la razón por la que el shell vive allá (ADR-017 D1). Acá se contesta "qué dijo
+   * el provider"; traducir eso a la forma que el matcher compara es del shell.
+   *
+   * Un evento que no se puede enriquecer NO frena la corrida, pero tampoco se
+   * desaparece: se cuenta en `unreadable`. Un evento malformado no es hipotético
+   * —es lo que vive en `pending_manual_review`— así que tirar acá dejaría la
+   * reconciliación bloqueada para siempre por un evento roto de hace tres meses.
+   * Y saltearlo en silencio sería peor: el par quedaría sin lado provider y el
+   * matcher lo reportaría como `missing_provider`, que es FALSO —el provider sí
+   * lo reportó, nosotros no pudimos leerlo—. El contador mantiene la distinción
+   * que vale: "no pude leer" no es "leí 0".
+   */
+  async findProviderSideEvents(): Promise<ProviderSideEventsResult> {
+    const events = await this.webhookRepository.findAllEvents();
+
+    const readable: ProviderSideEvent[] = [];
+    let unreadable = 0;
+
+    for (const event of events) {
+      const rawProvider = await this.providerService.isValidProvider(
+        event.providerId,
+      );
+      const providerInstance = this.providerService.getPaymentProviderInstance(
+        rawProvider.name,
+      );
+
+      let enriched: EnrichedProviderEvent;
+      try {
+        enriched = await providerInstance.fetchDetails(
+          providerInstance.parseWebhook(event.payload),
+        );
+      } catch {
+        // Deliberadamente ancho: cualquier motivo por el que este evento no se
+        // deja leer cuenta igual. Lo que NO se hace es tratarlo como ausencia.
+        unreadable += 1;
+        this.logger.warn(
+          event,
+          WebhookEventSerializer,
+          'event could not be enriched for reconciliation; counted as unreadable',
+        );
+        continue;
+      }
+
+      // `mapEventToTransaction` no puede devolver null acá: `fetchDetails` ya
+      // rechazó todo tipo que el dominio no modele, así que un enriched.type
+      // siempre mapea. Sin guarda muerta: una rama inalcanzable se lee como caso
+      // cubierto (misma razón por la que se borró UNSUPPORTED_CURRENCY en d29).
+      const { status } = mapEventToTransaction(enriched.type)!;
+
+      readable.push({
+        providerId: event.providerId,
+        providerRef: enriched.externalId,
+        amount: enriched.amount,
+        currency: enriched.currency,
+        status,
+        rawStatus: enriched.type,
+      });
+    }
+
+    return { events: readable, unreadable };
+  }
+
+  async getPipelineStatus(): Promise<WebhookPipelineStatus> {
     const events = await this.webhookRepository.findUnprocessedEvents();
     const countByStatus =
       await this.webhookRepository.getEventsInTerminalStatusCountByGroup();
@@ -222,13 +296,19 @@ export class WebhookService {
     };
   }
 
+  // Recibe el evento entero, no sólo el id, porque la generación de esta muerte
+  // es su `retries` actual. El valor es estable durante todo el procesamiento:
+  // lo único que lo mueve es `reactivateForReprocess`, que exige
+  // `status = 'pending_manual_review'` — imposible mientras el evento está siendo
+  // procesado. Por eso alcanza con el que ya trae el job, sin releer la fila.
   private async transitionToManualReview(
-    id: string,
+    event: WebhookEvent,
     reason: PendingManualReviewReason,
     context: Record<string, string | number>,
   ): Promise<void> {
     const deadLetterData: DeadLetterEventData = {
-      eventId: id,
+      eventId: event.id,
+      generation: event.retries,
       reason,
       lastError: JSON.stringify(context),
     };
@@ -238,7 +318,7 @@ export class WebhookService {
       'about to transition event to manual review',
     );
     await this.deadLetterRepository.append(deadLetterData);
-    await this.webhookRepository.setEventForManualReview(id);
+    await this.webhookRepository.setEventForManualReview(event.id);
     this.logger.warn(
       deadLetterData,
       deadLetterEventSerializer,
