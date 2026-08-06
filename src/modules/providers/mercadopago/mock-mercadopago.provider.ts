@@ -1,4 +1,5 @@
 import { Money } from '@/shared/money/money';
+import { isValidCurrency } from '@/shared/money/currency';
 import { PaymentProvider } from '../payment-provider.interface';
 import {
   RawProviderEvent,
@@ -11,8 +12,11 @@ import {
   RawMercadoPagoEventAction,
 } from './mercadopago-payload.type';
 import { BadRequestException } from '@nestjs/common';
-import { NotFoundInExternalSourceError } from '@/shared/exception/not-found-external-source.exception';
-import { MalformedProviderEventError } from '@/modules/webhooks/webhook.exception';
+import { fetchMercadoPagoTxDetail } from './mercadopago-tx-detail.client';
+import {
+  MalformedProviderEventError,
+  UnsupportedCurrencyError,
+} from '@/modules/webhooks/webhook.exception';
 
 const getType = (
   rawEventType: RawMercadoPagoEventAction,
@@ -50,31 +54,6 @@ const isProcessableMercadoPagoEvent = (
   (payload.action === 'payment.created' ||
     payload.action === 'payment.updated');
 
-type FakeMPObject = {
-  id: string;
-  amount: number;
-  currency: string;
-  status: string;
-};
-
-const MOCK_NOT_FOUND_ID = 'mp_notfound_123';
-
-const fakeFetchMercadoPagoTxDetail = async (
-  txId: string,
-): Promise<FakeMPObject> => {
-  if (!txId) throw new Error('Id is required for tx detail fetching');
-  if (txId === MOCK_NOT_FOUND_ID) {
-    throw new NotFoundInExternalSourceError(txId, 'MERCADO_PAGO');
-  }
-  const mockedMPData = {
-    id: '99999999',
-    amount: 123,
-    currency: 'usd',
-    status: 'success',
-  };
-  return mockedMPData;
-};
-
 export class MockMercadoPagoProvider implements PaymentProvider {
   name = 'MOCK_MERCADOPAGO';
 
@@ -98,9 +77,16 @@ export class MockMercadoPagoProvider implements PaymentProvider {
       throw new MalformedProviderEventError(rawEvent.rawEventData);
     }
     // TODO: real GET /v1/payments/{id}
-    const txData = await fakeFetchMercadoPagoTxDetail(
+    const txData = await fetchMercadoPagoTxDetail(
       rawEvent.rawEventData.data.id,
     );
+
+    // Same anti-corruption boundary as the Stripe provider: an unknown currency
+    // is rejected as non-retriable here, instead of letting Money throw a plain
+    // Error that the consumer would retry three times.
+    if (!isValidCurrency(txData.currency)) {
+      throw new UnsupportedCurrencyError(txData.currency);
+    }
 
     return {
       ...rawEvent,

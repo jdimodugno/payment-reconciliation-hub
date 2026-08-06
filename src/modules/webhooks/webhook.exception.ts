@@ -50,3 +50,14 @@ export class MalformedProviderEventError extends NonRetriableError {
     this.name = 'MalformedProviderEventError';
   }
 }
+
+// Money validates the currency and throws a plain Error — it is a value object
+// and must not know about queue semantics. The provider, as the
+// anti-corruption boundary, translates that into a non-retriable failure:
+// retrying an unknown currency can never make it known.
+export class UnsupportedCurrencyError extends NonRetriableError {
+  constructor(currency: string) {
+    super(`Unsupported currency for this provider event: ${currency}`);
+    this.name = 'UnsupportedCurrencyError';
+  }
+}

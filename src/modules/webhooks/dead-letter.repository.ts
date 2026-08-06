@@ -8,19 +8,18 @@ import { countDistinct, eq, sql } from 'drizzle-orm';
 export class DeadLetterRepository {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
+  // T5: the annex write MUST NOT fail silently. Swallowing here made
+  // `append` a best-effort no-op: the caller (transitionToManualReview) got a
+  // clean `void` and went on to flip the event to `pending_manual_review`,
+  // leaving an event in manual review with NO annex row — the very evidence
+  // that makes the failure auditable. The error propagates so the consumer
+  // re-throws and BullMQ retries the whole transition (attempts: 3).
   async append(deadLetterEventData: DeadLetterEventData): Promise<void> {
-    try {
-      await this.db.insert(deadLetterEventsTable).values({
-        eventId: deadLetterEventData.eventId,
-        lastError: deadLetterEventData.lastError,
-        reason: deadLetterEventData.reason,
-      });
-    } catch (error) {
-      console.error(
-        'An error ocurred during dead letter event writing. ',
-        error,
-      );
-    }
+    await this.db.insert(deadLetterEventsTable).values({
+      eventId: deadLetterEventData.eventId,
+      lastError: deadLetterEventData.lastError,
+      reason: deadLetterEventData.reason,
+    });
   }
 
   // ADR-015: el count de filas del anexo para un evento = cuántas veces murió =
@@ -36,19 +35,17 @@ export class DeadLetterRepository {
     return row.count;
   }
 
-  async getDistinctEventIdCount(): Promise<number | null> {
-    try {
-      const [deadLettered] = await this.db
-        .select({ events: countDistinct(deadLetterEventsTable.eventId) })
-        .from(deadLetterEventsTable);
+  // A read failure here is unexpected infrastructure failure, not a domain
+  // outcome: "could not read" is not "read zero". The previous `null` fused
+  // both and dropped the cause on the floor, so the caller could only report a
+  // generic error with a 200. Letting it propagate keeps the cause attached and
+  // lets the HTTP boundary answer 500 — an overseer endpoint that returns 200
+  // while saying "an error occurred" is counted as success by monitoring.
+  async getDistinctEventIdCount(): Promise<number> {
+    const [deadLettered] = await this.db
+      .select({ events: countDistinct(deadLetterEventsTable.eventId) })
+      .from(deadLetterEventsTable);
 
-      return deadLettered.events;
-    } catch (error) {
-      console.error(
-        'An error ocurred during dead letter event reading. ',
-        error,
-      );
-      return null;
-    }
+    return deadLettered.events;
   }
 }

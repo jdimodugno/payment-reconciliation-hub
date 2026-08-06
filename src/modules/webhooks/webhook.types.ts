@@ -1,8 +1,11 @@
 import { LogSerializer } from '@/shared/logging/log-serializer.interface';
 import { webhookEventStatusEnum } from './webhook.schema';
 
+// UNSUPPORTED_CURRENCY was removed: nothing could produce it. The guard that
+// used it sat after enrichment, which rejects an unknown currency first, so the
+// reason named a state the system never reaches. Unreachable vocabulary reads
+// as a covered case and hides that the path is not handled.
 export enum PendingManualReviewReason {
-  UNSUPPORTED_CURRENCY = 'unsupported_currency',
   UNSUPPORTED_EVENT_TYPE = 'unsupported_event_type',
 }
 
@@ -47,11 +50,10 @@ export type SuccessfulReconciliationStatus = {
   total: number;
 };
 
-export type ErrorReconciliationStatus = { error: string };
-
-export type ReconciliationStatus =
-  | SuccessfulReconciliationStatus
-  | ErrorReconciliationStatus;
+// The degraded `{ error }` arm is gone: a failed read is unexpected
+// infrastructure failure, not a domain outcome, so it propagates and the HTTP
+// boundary answers 500 instead of a 200 that monitoring counts as success.
+export type ReconciliationStatus = SuccessfulReconciliationStatus;
 
 export const WebhookEventSerializer: LogSerializer<WebhookEvent> = {
   name: 'WebhookEvent',

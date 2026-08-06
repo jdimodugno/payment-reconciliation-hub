@@ -1,4 +1,5 @@
 import { Money } from '@/shared/money/money';
+import { isValidCurrency } from '@/shared/money/currency';
 import { PaymentProvider } from '../payment-provider.interface';
 import {
   RawProviderEvent,
@@ -10,7 +11,10 @@ import {
   StripeEnrichedPayload,
   StripeRawPayload,
 } from './stripe-payload.type';
-import { MalformedProviderEventError } from '@/modules/webhooks/webhook.exception';
+import {
+  MalformedProviderEventError,
+  UnsupportedCurrencyError,
+} from '@/modules/webhooks/webhook.exception';
 import { BadRequestException } from '@nestjs/common';
 
 const getType = (rawEventType: RawStripeEventType): ProviderEventType => {
@@ -82,14 +86,21 @@ export class MockStripeProvider implements PaymentProvider {
       throw new MalformedProviderEventError(rawEvent.rawEventData);
     }
 
+    const { amount, currency } = rawEvent.rawEventData.data.object;
+
+    // Anti-corruption boundary: Money rejects an unknown currency with a plain
+    // Error, which the consumer would treat as transient and retry three times
+    // for a value that can never become valid. Translated here into a
+    // non-retriable failure instead.
+    if (!isValidCurrency(currency)) {
+      throw new UnsupportedCurrencyError(currency);
+    }
+
     return {
       ...rawEvent,
       type: getType(rawEvent.rawEventData.type),
-      amount: Money.fromMinorUnits(
-        rawEvent.rawEventData.data.object.amount,
-        rawEvent.rawEventData.data.object.currency,
-      ).toDecimal(),
-      currency: rawEvent.rawEventData.data.object.currency,
+      amount: Money.fromMinorUnits(amount, currency).toDecimal(),
+      currency,
     };
   }
 }
