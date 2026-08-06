@@ -3,7 +3,6 @@ import { WebhookService } from './webhooks.service';
 import { WebhookRepository } from './webhooks.repository';
 import { ProvidersService } from '../providers/providers.service';
 import {
-  ErrorReconciliationStatus,
   PendingManualReviewReason,
   SuccessfulReconciliationStatus,
   WebhookEvent,
@@ -98,35 +97,11 @@ describe('WebhookService', () => {
       jest.clearAllMocks();
     });
 
-    describe('guard: currency no soportada', () => {
-      it('currency inválida → setEventForManualReview(UNSUPPORTED_CURRENCY) y NO procesa', async () => {
-        const event = buildEvent();
-        providerInstance.fetchDetails.mockResolvedValue({
-          ...event,
-          currency: 'axsd',
-          type: 'payment.succeeded',
-          amount: '20',
-          externalId: 'x',
-          externalEventId: 'e',
-          rawEventData: {},
-        });
-        await service.processSingleEvent(event);
-        expect(webhookRepository.markEventAsProcessed).not.toHaveBeenCalled();
-        expect(deadLetterRepository.append).toHaveBeenCalledWith({
-          eventId: event.id,
-          reason: PendingManualReviewReason.UNSUPPORTED_CURRENCY,
-          lastError: expect.any(String),
-        });
-        expect(webhookRepository.setEventForManualReview).toHaveBeenCalledWith(
-          event.id,
-        );
-        expect(
-          deadLetterRepository.append.mock.invocationCallOrder[0],
-        ).toBeLessThan(
-          webhookRepository.setEventForManualReview.mock.invocationCallOrder[0],
-        );
-      });
-    });
+    // The unsupported-currency guard is gone: it sat after `fetchDetails`,
+    // which builds a Money and rejects an unknown currency before that line was
+    // ever reached. Only a mocked provider could produce the state it checked
+    // for. The providers now raise `UnsupportedCurrencyError` (non-retriable) at
+    // the anti-corruption boundary, covered in their own specs.
 
     describe('guard: event-type no mapeable', () => {
       it('mapping null → setEventForManualReview(UNSUPPORTED_EVENT_TYPE) y NO procesa', async () => {
@@ -151,6 +126,28 @@ describe('WebhookService', () => {
         ).toBeLessThan(
           webhookRepository.setEventForManualReview.mock.invocationCallOrder[0],
         );
+      });
+
+      // T5: the annex write is the audit evidence. If it fails, the transition
+      // MUST NOT continue — an event sitting in `pending_manual_review` with no
+      // annex row is unreconstructable. The error propagates so BullMQ retries.
+      it('append al anexo falla → NO flipea a manual review y propaga el error', async () => {
+        const event = buildEvent();
+        providerInstance.fetchDetails.mockResolvedValue({
+          currency: 'usd',
+          type: 'payment.disputed',
+          ...event,
+        });
+        const writeFailure = new Error('annex write failed');
+        deadLetterRepository.append.mockRejectedValueOnce(writeFailure);
+
+        await expect(service.processSingleEvent(event)).rejects.toBe(
+          writeFailure,
+        );
+
+        expect(
+          webhookRepository.setEventForManualReview,
+        ).not.toHaveBeenCalled();
       });
     });
 
@@ -253,36 +250,32 @@ describe('WebhookService', () => {
       expect(castedResult.unprocessedEvents.length).toBe(0);
     });
 
-    it('error retrieving reconciliation status - error retrieving events grouped by status', async () => {
-      webhookRepository.getEventsInTerminalStatusCountByGroup.mockResolvedValue(
-        null,
+    // A failed read is unexpected infrastructure failure, not a domain outcome:
+    // it propagates with its cause so the HTTP boundary answers 500. These
+    // replace the previous pair, which asserted a degraded `{ error }` body
+    // returned with a 200 — a response monitoring counts as success.
+    it('falla la lectura de los counts por estado → propaga, no devuelve status degradado', async () => {
+      const readFailure = new Error('connection terminated');
+      webhookRepository.getEventsInTerminalStatusCountByGroup.mockRejectedValue(
+        readFailure,
       );
 
-      const rawResult = await service.getReconciliationStatus();
-
-      if (!Object.hasOwn(rawResult, 'error')) throw new Error('expected error');
-      const castedResult = rawResult as ErrorReconciliationStatus;
-
-      expect(castedResult.error).toBe(
-        'An error occurred while obtaining reconciliation status',
-      );
+      await expect(service.getReconciliationStatus()).rejects.toBe(readFailure);
     });
 
-    it('error retrieving reconciliation status - error retrieving dead lettered', async () => {
+    it('falla la lectura de dead-lettered → propaga, no devuelve status degradado', async () => {
       webhookRepository.getEventsInTerminalStatusCountByGroup.mockResolvedValue(
-        { processed: 1, pendingManualReview: 2 },
+        {
+          processed: 1,
+          pendingManualReview: 2,
+        },
+      );
+      const readFailure = new Error('connection terminated');
+      deadLetterRepository.getDistinctEventIdCount.mockRejectedValue(
+        readFailure,
       );
 
-      deadLetterRepository.getDistinctEventIdCount.mockResolvedValue(null);
-
-      const rawResult = await service.getReconciliationStatus();
-
-      if (!Object.hasOwn(rawResult, 'error')) throw new Error('expected error');
-      const castedResult = rawResult as ErrorReconciliationStatus;
-
-      expect(castedResult.error).toBe(
-        'An error occurred while obtaining reconciliation status',
-      );
+      await expect(service.getReconciliationStatus()).rejects.toBe(readFailure);
     });
   });
 

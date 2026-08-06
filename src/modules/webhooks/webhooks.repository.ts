@@ -38,27 +38,25 @@ export class WebhookRepository {
       : null;
   }
 
+  // See DeadLetterRepository.getDistinctEventIdCount: a read failure is
+  // unexpected infrastructure failure, not a domain outcome. It propagates with
+  // its cause instead of collapsing into a `null` that means "could not read".
   async getEventsInTerminalStatusCountByGroup(): Promise<
-    SuccessfulReconciliationStatus['eventsByStatus'] | null
+    SuccessfulReconciliationStatus['eventsByStatus']
   > {
-    try {
-      const [row] = await this.db
-        .select({
-          processed:
-            sql<number>`count(*) filter (where ${webhooksTable.status} = ${'processed'})`.mapWith(
-              Number,
-            ),
-          pendingManualReview:
-            sql<number>`count(*) filter (where ${webhooksTable.status} = ${'pending_manual_review'})`.mapWith(
-              Number,
-            ),
-        })
-        .from(webhooksTable);
-      return row;
-    } catch (error) {
-      console.error('An error ocurred during webhook events reading. ', error);
-      return null;
-    }
+    const [row] = await this.db
+      .select({
+        processed:
+          sql<number>`count(*) filter (where ${webhooksTable.status} = ${'processed'})`.mapWith(
+            Number,
+          ),
+        pendingManualReview:
+          sql<number>`count(*) filter (where ${webhooksTable.status} = ${'pending_manual_review'})`.mapWith(
+            Number,
+          ),
+      })
+      .from(webhooksTable);
+    return row;
   }
 
   async create(
@@ -217,17 +215,12 @@ export class WebhookRepository {
           status: 'already_processed',
         };
       }
-      if (error instanceof InvariantViolationError) {
-        console.error(
-          `Failed attempt to process external event: ${eventData.externalEventId} due to data inconsistency`,
-        );
-        throw error;
-      }
-
-      console.error(
-        `Failed attempt to process external event: ${eventData.externalEventId}`,
-      );
-
+      // Infra does not log what it propagates (d21: log at the domain decision
+      // point). Everything below re-throws, so whoever decides what the failure
+      // means — the consumer — owns the log. Logging here as well produced a
+      // duplicate entry and bypassed the ADR-012 structured logger. Removing it
+      // left the `InvariantViolationError` branch identical to the fallthrough:
+      // it only ever existed to log a different message.
       throw error;
     }
   }

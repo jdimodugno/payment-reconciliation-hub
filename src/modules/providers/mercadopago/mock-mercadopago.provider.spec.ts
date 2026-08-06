@@ -1,3 +1,6 @@
+import { UnsupportedCurrencyError } from '@/modules/webhooks/webhook.exception';
+import { NonRetriableError } from '@/shared/exception/non-retriable.exception';
+import * as txDetailClient from './mercadopago-tx-detail.client';
 import { MockMercadoPagoProvider } from './mock-mercadopago.provider';
 
 const provider = new MockMercadoPagoProvider();
@@ -36,11 +39,37 @@ describe('MockMercadoPagoProvider.parseWebhook', () => {
 });
 
 describe('MockMercadoPagoProvider.fetchDetails', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('obtains full detail of a given transaction', async () => {
     const enriched = await provider.fetchDetails(
       provider.parseWebhook(validEventPayload),
     );
     expect(enriched.amount).toEqual('123');
     expect(enriched.currency).toEqual('usd');
+  });
+
+  // The currency arrives from the external source, not from the webhook
+  // payload, so the hostile value has to come from the tx-detail client. Same
+  // boundary rule as the Stripe provider: an unknown currency can never become
+  // valid, so it must not be retried.
+  it('rejects an unknown currency from the external source as non-retriable', async () => {
+    jest.spyOn(txDetailClient, 'fetchMercadoPagoTxDetail').mockResolvedValue({
+      id: '99999999',
+      amount: 123,
+      currency: 'xyz',
+      status: 'success',
+    });
+
+    const raw = provider.parseWebhook(validEventPayload);
+
+    await expect(provider.fetchDetails(raw)).rejects.toBeInstanceOf(
+      UnsupportedCurrencyError,
+    );
+    await expect(provider.fetchDetails(raw)).rejects.toBeInstanceOf(
+      NonRetriableError,
+    );
   });
 });

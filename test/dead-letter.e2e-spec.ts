@@ -99,6 +99,29 @@ describe('Dead-letter annex (e2e)', () => {
     expect('status' in rows[0]).toBe(false);
   });
 
+  // T5: `append` used to swallow write failures, returning a clean `void`.
+  // The caller then flipped the event to `pending_manual_review`, producing an
+  // event in manual review with no annex row — an unauditable failure.
+  // Forced against the real DB via the event_id FK (ADR-011): an eventId with
+  // no matching webhook_events row is a genuine constraint violation, not a mock.
+  it('propagates the write failure instead of swallowing it (T5)', async () => {
+    const orphanEventId = '00000000-0000-0000-0000-000000000000';
+
+    await expect(
+      repo.append({
+        eventId: orphanEventId,
+        reason: 'forced_failure',
+        lastError: null,
+      }),
+    ).rejects.toThrow();
+
+    const orphanRows = await db
+      .select()
+      .from(deadLetterEventsTable)
+      .where(eq(deadLetterEventsTable.eventId, orphanEventId));
+    expect(orphanRows.length).toBe(0);
+  });
+
   // DEFERRED (Día 19, cabo #1 DLQ): el camino retriable-AGOTADO debe persistir al anexo
   // durable, pero hoy muere en el failed-set de BullMQ (volátil). Mecanismo pendiente:
   // hook @OnWorkerEvent('failed') con guarda attemptsMade >= attempts + sweep de
