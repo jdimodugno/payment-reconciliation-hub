@@ -106,18 +106,19 @@ export class WebhookService {
       throw new EventNotFoundError(eventId);
     }
 
-    const reactivated =
+    // La generación viene del propio flip: es el `retries` ya incrementado. Antes
+    // se derivaba contando filas del anexo, un número que dejó de significar
+    // "veces que murió" en cuanto los reintentos de la transición empezaron a
+    // dejar rastro. El flip es la definición misma de una muerte nueva.
+    const generation =
       await this.webhookRepository.reactivateForReprocess(eventId);
-    if (!reactivated) {
+    if (generation === null) {
       throw new EventNotReprocessableError(eventId, event.status);
     }
 
-    const failureCount =
-      await this.deadLetterRepository.getFailureCountForEvent(eventId);
-
     await this.enqueueEvent(
       event,
-      `${WEBHOOKS_PROCESSOR_JOB_NAME}_${eventId}_retry_${failureCount}`,
+      `${WEBHOOKS_PROCESSOR_JOB_NAME}_${eventId}_retry_${generation}`,
     );
   }
 
@@ -153,7 +154,7 @@ export class WebhookService {
 
     if (!eventToTransaction) {
       await this.transitionToManualReview(
-        singleEvent.id,
+        singleEvent,
         PendingManualReviewReason.UNSUPPORTED_EVENT_TYPE,
         { type: enrichedEventData.type, provider: providerInstance.name },
       );
@@ -222,13 +223,19 @@ export class WebhookService {
     };
   }
 
+  // Recibe el evento entero, no sólo el id, porque la generación de esta muerte
+  // es su `retries` actual. El valor es estable durante todo el procesamiento:
+  // lo único que lo mueve es `reactivateForReprocess`, que exige
+  // `status = 'pending_manual_review'` — imposible mientras el evento está siendo
+  // procesado. Por eso alcanza con el que ya trae el job, sin releer la fila.
   private async transitionToManualReview(
-    id: string,
+    event: WebhookEvent,
     reason: PendingManualReviewReason,
     context: Record<string, string | number>,
   ): Promise<void> {
     const deadLetterData: DeadLetterEventData = {
-      eventId: id,
+      eventId: event.id,
+      generation: event.retries,
       reason,
       lastError: JSON.stringify(context),
     };
@@ -238,7 +245,7 @@ export class WebhookService {
       'about to transition event to manual review',
     );
     await this.deadLetterRepository.append(deadLetterData);
-    await this.webhookRepository.setEventForManualReview(id);
+    await this.webhookRepository.setEventForManualReview(event.id);
     this.logger.warn(
       deadLetterData,
       deadLetterEventSerializer,

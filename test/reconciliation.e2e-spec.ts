@@ -198,8 +198,18 @@ describe('Reconciliation status (e2e)', () => {
         externalEventId: 'evt_dead_twice',
       });
       await db.insert(deadLetterEventsTable).values([
-        { eventId: dead.id, reason: 'first_death', lastError: null },
-        { eventId: dead.id, reason: 'second_death', lastError: null },
+        {
+          eventId: dead.id,
+          generation: 0,
+          reason: 'first_death',
+          lastError: null,
+        },
+        {
+          eventId: dead.id,
+          generation: 1,
+          reason: 'second_death',
+          lastError: null,
+        },
       ]);
       await seedWebhook({
         status: 'processed',

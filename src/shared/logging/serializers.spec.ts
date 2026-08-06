@@ -71,6 +71,7 @@ const cases: SerializerCase[] = [
     serializer: deadLetterEventSerializer,
     entity: {
       eventId: 'evt-1',
+      generation: 0,
       reason: 'unsupported_currency',
       lastError: '{"stack":"...opaco..."}',
     },

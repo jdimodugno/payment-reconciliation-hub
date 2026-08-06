@@ -64,6 +64,7 @@ describe('Dead-letter annex (e2e)', () => {
   it('appends a single dead-letter row pointing at the event', async () => {
     await repo.append({
       eventId,
+      generation: 0,
       reason: 'forced_append',
       lastError: null,
     });
@@ -71,26 +72,60 @@ describe('Dead-letter annex (e2e)', () => {
     expect(rows.length).toBe(1);
     expect(rows[0].failedAt).not.toBeUndefined();
   });
-  it('appends N rows for the same event (audit trail, never updates)', async () => {
+  // This used to assert "N appends -> N rows", which was ADR-011's original
+  // append-only behaviour. It no longer describes production: after ADR-016 made
+  // `append` propagate, BullMQ retries the whole transition, and those retries are
+  // THE SAME death. The two cases below are what production can actually produce,
+  // and they are the two halves of the arbiter — without
+  // UNIQUE (event_id, generation) the first one fails with 2 rows instead of 1.
+  it('converges to one row when the same death is recorded twice (retry of a failed transition)', async () => {
     expect(await countDeadLetterEventsForId()).toBe(0);
+
+    // Same generation twice = the same death being re-recorded. Nothing bumped
+    // `webhook_events.retries` in between, because a reactivation is the only
+    // thing that can, and it requires the event to already be in manual review.
     await repo.append({
       eventId,
+      generation: 0,
       reason: 'first_append',
       lastError: null,
     });
-    expect(await countDeadLetterEventsForId()).toBe(1);
     await repo.append({
       eventId,
-      reason: 'second_append',
+      generation: 0,
+      reason: 'first_append',
       lastError: null,
     });
+
+    const rows = await fetchDeadLetterEventsForId();
+    expect(rows.length).toBe(1);
+    expect(rows[0].reason).toBe('first_append');
+  });
+
+  it('appends a new row for a death in a later generation (real re-death)', async () => {
+    await repo.append({
+      eventId,
+      generation: 0,
+      reason: 'first_death',
+      lastError: null,
+    });
+    // A reactivation flip happened in between, so `retries` moved to 1.
+    await repo.append({
+      eventId,
+      generation: 1,
+      reason: 'second_death',
+      lastError: null,
+    });
+
     const rows = await fetchDeadLetterEventsForId();
     expect(rows.length).toBe(2);
+    expect(rows.map((r) => r.generation).sort()).toEqual([0, 1]);
     expect(rows.every((dlqevent) => dlqevent.eventId === eventId)).toBe(true);
   });
   it('does not store event state (status lives only in webhook_events)', async () => {
     await repo.append({
       eventId,
+      generation: 0,
       reason: 'first_append',
       lastError: null,
     });
@@ -110,6 +145,7 @@ describe('Dead-letter annex (e2e)', () => {
     await expect(
       repo.append({
         eventId: orphanEventId,
+        generation: 0,
         reason: 'forced_failure',
         lastError: null,
       }),

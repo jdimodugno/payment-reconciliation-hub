@@ -239,18 +239,26 @@ export class WebhookRepository {
   // 'received' orgánico. Bajo reprocess concurrente, solo uno gana (returning vacío
   // para el resto). `processed_at`/`transaction_id` de un muerto no-procesado ya
   // están en null → no requieren reset.
-  async reactivateForReprocess(eventId: string): Promise<boolean> {
-    const reactivated = await this.db
+  // Devuelve la GENERACIÓN nueva (el `retries` ya incrementado), o `null` si no
+  // reactivó nada. El incremento va en la MISMA sentencia que el árbitro de
+  // concurrencia (`WHERE status = 'pending_manual_review'`): el estado que cambia
+  // es el candado, así que subir el contador aparte abriría una ventana donde una
+  // reactivación se queda sin generación (o al revés).
+  async reactivateForReprocess(eventId: string): Promise<number | null> {
+    const [reactivated] = await this.db
       .update(webhooksTable)
-      .set({ status: 'received' })
+      .set({
+        status: 'received',
+        retries: sql`${webhooksTable.retries} + 1`,
+      })
       .where(
         and(
           eq(webhooksTable.id, eventId),
           eq(webhooksTable.status, 'pending_manual_review'),
         ),
       )
-      .returning({ id: webhooksTable.id });
+      .returning({ retries: webhooksTable.retries });
 
-    return reactivated.length > 0;
+    return reactivated?.retries ?? null;
   }
 }
