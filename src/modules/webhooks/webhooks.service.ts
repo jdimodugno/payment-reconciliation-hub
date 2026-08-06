@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { WebhookRepository } from './webhooks.repository';
 import {
   PendingManualReviewReason,
+  ProviderSideEvent,
+  ProviderSideEventsResult,
   ReconciliationStatus,
   WebhookEvent,
   WebhookEventSerializer,
 } from './webhook.types';
 import { ProvidersService } from '../providers/providers.service';
+import { EnrichedProviderEvent } from '../providers/provider-event.type';
 import { NewWebhookEvent } from './dto/new-webhook.dto';
 import { UpsertTransactionData } from '../transactions/dto/create-transaction.dto';
 import { WEBHOOKS_PROCESSOR_JOB_NAME } from './webhook.constants';
@@ -193,6 +196,76 @@ export class WebhookService {
     }
 
     this.logger.info(singleEvent, WebhookEventSerializer, messageToLog);
+  }
+
+  /**
+   * Lado provider para la reconciliación, re-derivado al vuelo (ADR-014: auditar,
+   * no confiar). Re-corre la MISMA cadena que creó las Transaction —
+   * `parseWebhook` → `fetchDetails` → `mapEventToTransaction`— sobre lo que el
+   * provider dijo, sin leer nada del lado interno.
+   *
+   * Devuelve una forma PROPIA, no `ProviderSide`: si este módulo importara los
+   * tipos de `reconciliation/`, la flecha apuntaría para los dos lados y se caería
+   * la razón por la que el shell vive allá (ADR-017 D1). Acá se contesta "qué dijo
+   * el provider"; traducir eso a la forma que el matcher compara es del shell.
+   *
+   * Un evento que no se puede enriquecer NO frena la corrida, pero tampoco se
+   * desaparece: se cuenta en `unreadable`. Un evento malformado no es hipotético
+   * —es lo que vive en `pending_manual_review`— así que tirar acá dejaría la
+   * reconciliación bloqueada para siempre por un evento roto de hace tres meses.
+   * Y saltearlo en silencio sería peor: el par quedaría sin lado provider y el
+   * matcher lo reportaría como `missing_provider`, que es FALSO —el provider sí
+   * lo reportó, nosotros no pudimos leerlo—. El contador mantiene la distinción
+   * que vale: "no pude leer" no es "leí 0".
+   */
+  async findProviderSideEvents(): Promise<ProviderSideEventsResult> {
+    const events = await this.webhookRepository.findAllEvents();
+
+    const readable: ProviderSideEvent[] = [];
+    let unreadable = 0;
+
+    for (const event of events) {
+      const rawProvider = await this.providerService.isValidProvider(
+        event.providerId,
+      );
+      const providerInstance = this.providerService.getPaymentProviderInstance(
+        rawProvider.name,
+      );
+
+      let enriched: EnrichedProviderEvent;
+      try {
+        enriched = await providerInstance.fetchDetails(
+          providerInstance.parseWebhook(event.payload),
+        );
+      } catch {
+        // Deliberadamente ancho: cualquier motivo por el que este evento no se
+        // deja leer cuenta igual. Lo que NO se hace es tratarlo como ausencia.
+        unreadable += 1;
+        this.logger.warn(
+          event,
+          WebhookEventSerializer,
+          'event could not be enriched for reconciliation; counted as unreadable',
+        );
+        continue;
+      }
+
+      // `mapEventToTransaction` no puede devolver null acá: `fetchDetails` ya
+      // rechazó todo tipo que el dominio no modele, así que un enriched.type
+      // siempre mapea. Sin guarda muerta: una rama inalcanzable se lee como caso
+      // cubierto (misma razón por la que se borró UNSUPPORTED_CURRENCY en d29).
+      const { status } = mapEventToTransaction(enriched.type)!;
+
+      readable.push({
+        providerId: event.providerId,
+        providerRef: enriched.externalId,
+        amount: enriched.amount,
+        currency: enriched.currency,
+        status,
+        rawStatus: enriched.type,
+      });
+    }
+
+    return { events: readable, unreadable };
   }
 
   async getReconciliationStatus(): Promise<ReconciliationStatus> {

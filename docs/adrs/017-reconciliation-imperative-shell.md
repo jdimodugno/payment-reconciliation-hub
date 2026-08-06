@@ -96,6 +96,26 @@ Not chosen: a two-table problem/observation model. It is the fuller model, but
 `status` has no consumer today; building it now is structure without a caller —
 the exact debt this ADR exists to repay.
 
+### D6 — An unreadable event is counted, not skipped and not fatal (added during implementation)
+
+Surfaced by the first e2e run, not by design: `findProviderSideEvents` re-enriches
+every stored event, and `fetchDetails` throws on anything it cannot parse. A single
+malformed event would take down the whole run — and malformed events are not
+hypothetical, they are exactly what sits in `pending_manual_review`.
+
+Failing the run is honest but leaves a three-month-old broken event blocking
+reconciliation forever. Skipping silently is worse: the pair loses its provider
+side, and the matcher reports `missing_provider` — which is false. The provider
+did report it; we could not read it.
+
+So the run skips the event and returns `scanned.unreadable`. The count preserves
+the distinction ADR-016 already drew for read failures: **"could not read" is not
+"read zero"**. A clean run over unreadable data must not read as a healthy one.
+
+The same pass deleted a dead guard: `mapEventToTransaction` cannot return null
+after `fetchDetails` has accepted the event, and an unreachable branch reads as a
+covered case (the ADR-016 / d29 lesson).
+
 ### D5 — Rename the misnamed endpoint
 
 `GET /webhooks/reconciliation-status` is renamed to reflect what it returns

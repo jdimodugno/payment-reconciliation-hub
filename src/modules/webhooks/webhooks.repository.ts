@@ -132,6 +132,20 @@ export class WebhookRepository {
     return events;
   }
 
+  // Universo entero de eventos recibidos: la reconciliación re-deriva el lado
+  // provider desde acá (ADR-014: auditar, no confiar). Incluye los NO procesados
+  // a propósito — un evento que llegó y nunca se materializó en Transaction es
+  // exactamente un `missing_internal`, y filtrarlo cegaría al matcher.
+  async findAllEvents(): Promise<WebhookEvent[]> {
+    const events = await this.db.select().from(webhooksTable);
+
+    return events.map((evt) => ({
+      ...evt,
+      receivedAt: evt.receivedAt.toISOString(),
+      processedAt: evt.processedAt?.toISOString() ?? null,
+    }));
+  }
+
   async getPendingWebhookEvents(): Promise<{
     status: 'none' | 'found';
     elements: WebhookEvent[];
